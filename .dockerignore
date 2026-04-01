@@ -1,0 +1,223 @@
+# ============================================================================
+# DOCKER IGNORE FILE
+# ============================================================================
+# Files and directories to exclude from Docker build context
+# This reduces build time and image size by not copying unnecessary files
+# ============================================================================
+
+# ============================================================================
+# PYTHON SPECIFIC
+# ============================================================================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.hypothesis/
+.pytest_cache/
+pytest.ini
+tests/
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+virtualenv/
+
+# ============================================================================
+# IDE AND EDITOR FILES
+# ============================================================================
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+
+# ============================================================================
+# VERSION CONTROL
+# ============================================================================
+
+.git/
+.gitignore
+.gitattributes
+.github/
+
+# ============================================================================
+# ENVIRONMENT AND CONFIGURATION
+# ============================================================================
+
+# Environment files (mount at runtime or use secrets)
+# RECOMMENDED: Keep .env excluded and use --env-file or -e flags at runtime
+# Comment out the line below if you want to include .env in the image
+# .env
+.env.*
+!.env.example
+
+# ============================================================================
+# DOCUMENTATION
+# ============================================================================
+
+*.md
+!README.md
+docs/
+documentation/
+
+# ============================================================================
+# DOCKER
+# ============================================================================
+
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# ============================================================================
+# CI/CD
+# ============================================================================
+
+.gitlab-ci.yml
+.travis.yml
+Jenkinsfile
+azure-pipelines.yml
+.circleci/
+
+# ============================================================================
+# LOGS AND DATABASES
+# ============================================================================
+
+*.log
+*.sql
+*.sqlite
+*.db
+
+# Server logs
+server.log
+access.log
+error.log
+
+# ============================================================================
+# TEMPORARY AND BACKUP FILES
+# ============================================================================
+
+*.tmp
+*.temp
+*.bak
+*.backup
+*.old
+*~
+
+# ============================================================================
+# OS SPECIFIC
+# ============================================================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+.directory
+.Trash-*
+
+# ============================================================================
+# PROJECT SPECIFIC
+# ============================================================================
+
+# Test files
+google_oauth_test.html
+
+# Migration files (optional - uncomment if you run migrations separately)
+# migrations/versions/*.py
+
+# Alembic cache
+alembic/__pycache__/
+
+# Static files if served separately
+static/
+media/
+
+# Local development files
+*.local
+.local/
+
+# Node modules (if any frontend tools used)
+node_modules/
+package-lock.json
+yarn.lock
+
+# ============================================================================
+# NOTES
+# ============================================================================
+# 
+# This .dockerignore file helps:
+# 1. Reduce Docker build context size
+# 2. Speed up Docker builds
+# 3. Prevent sensitive files from being copied
+# 4. Keep images clean and minimal
+#
+# Adjust based on your specific project needs
+# ============================================================================
