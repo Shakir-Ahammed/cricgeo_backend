@@ -1,51 +1,11 @@
 # ============================================================================
-# DOCKER COMPOSE CONFIGURATION
+# DOCKER COMPOSE CONFIGURATION (POSTGRESQL-FIRST)
 # ============================================================================
-# Complete stack deployment for FastAPI backend with MySQL database
-# Includes backend service, MySQL database, and optional services
+# CricGeo backend with optional local PostgreSQL and pgAdmin services.
+# Default DATABASE_URL points to external PostgreSQL using .env values.
 # ============================================================================
 
 services:
-  # ==========================================================================
-  # MYSQL DATABASE SERVICE
-  # ==========================================================================
-  mysql:
-    image: mysql:8.0
-    container_name: fastapi_mysql
-    restart: unless-stopped
-    
-    # Environment variables for MySQL
-    environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-23570111}
-      MYSQL_DATABASE: ${DB_NAME:-saas_db}
-      # Note: MYSQL_USER cannot be 'root'. Root user is configured via MYSQL_ROOT_PASSWORD only.
-      # Uncomment below to create an additional non-root user:
-      # MYSQL_USER: ${DB_USER:-appuser}
-      # MYSQL_PASSWORD: ${DB_PASSWORD:-23570111}
-    
-    # Port mapping (host:container)
-    # Changed to 3307 to avoid conflict with local MySQL on 3306
-    ports:
-      - "3307:3306"
-    
-    # Persistent volume for database data
-    volumes:
-      - mysql_data:/var/lib/mysql
-      # Optional: Custom MySQL configuration
-      # - ./mysql.cnf:/etc/mysql/conf.d/custom.cnf
-    
-    # Health check for MySQL
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PASSWORD:-23570111}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    
-    # Network
-    networks:
-      - backend_network
-
   # ==========================================================================
   # FASTAPI BACKEND SERVICE
   # ==========================================================================
@@ -53,185 +13,110 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    
-    container_name: fastapi_backend
+
+    container_name: cricgeo_backend
     restart: unless-stopped
-    
-    # Port mapping (host:container)
+
     ports:
       - "8000:8000"
-    
-    # Environment variables (override .env file)
+
     environment:
-      # Database configuration
-      DATABASE_URL: mysql+aiomysql://${DB_USER:-root}:${DB_PASSWORD:-23570111}@mysql:3306/${DB_NAME:-saas_db}
-      
-      # JWT configuration
-      JWT_SECRET: ${JWT_SECRET:-mL048oiv5fDgyTw-344kU1MqZcHuWJ09YiLLC33JGEU}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://cric_geo:Shuvo231@132.145.103.103:5432/cric_geo_db}
+      JWT_SECRET: ${JWT_SECRET:-change-this-in-production}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
       REFRESH_TOKEN_EXPIRE_MINUTES: ${REFRESH_TOKEN_EXPIRE_MINUTES:-10080}
-      
-      # Email configuration
       MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
       MAIL_PORT: ${MAIL_PORT:-587}
       MAIL_USERNAME: ${MAIL_USERNAME}
       MAIL_PASSWORD: ${MAIL_PASSWORD}
-      MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-chatbot-pro@gmail.com}
-      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-ChatBot-Pro}
-      
-      # Google OAuth2 configuration
+      MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-noreply@cricgeo.app}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-CricGeo}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:8000/auth/google/callback}
-      
-      # Application configuration
+      APP_NAME: ${APP_NAME:-CricGeo Backend}
+      APP_VERSION: ${APP_VERSION:-1.0.0}
       DEBUG: ${DEBUG:-False}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
-      
-      # Gunicorn workers (adjust based on CPU cores)
       WORKERS: ${WORKERS:-4}
-    
-    # Dependencies - wait for MySQL to be healthy
-    depends_on:
-      mysql:
-        condition: service_healthy
-    
-    # Optional: Mount volumes for development
-    # volumes:
-    #   - ./app:/app/app  # Live code reload
-    #   - ./migrations:/app/migrations  # Database migrations
-    
-    # Health check for backend
+
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-    
-    # Network
+
     networks:
       - backend_network
-    
-    # Command override for development (with auto-reload)
-    # Uncomment for development mode:
-    # command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   # ==========================================================================
-  # OPTIONAL: PHPMYADMIN (Database Management)
+  # OPTIONAL: LOCAL POSTGRESQL SERVICE (DEV ONLY)
   # ==========================================================================
-  phpmyadmin:
-    image: phpmyadmin/phpmyadmin:latest
-    container_name: fastapi_phpmyadmin
+  postgres:
+    image: postgres:16-alpine
+    container_name: cricgeo_postgres
     restart: unless-stopped
-    
+
     environment:
-      PMA_HOST: mysql
-      PMA_PORT: 3306
-      PMA_USER: ${DB_USER:-root}
-      PMA_PASSWORD: ${DB_PASSWORD:-23570111}
-    
-    ports:
-      - "8080:80"
-    
-    depends_on:
-      - mysql
-    
-    networks:
-      - backend_network
-    
-    # Uncomment to enable phpMyAdmin
-    profiles:
-      - tools
+      POSTGRES_DB: ${DB_NAME:-cric_geo_db}
+      POSTGRES_USER: ${DB_USER:-cric_geo}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-Shuvo231}
 
-  # ==========================================================================
-  # OPTIONAL: REDIS (Caching/Session Storage)
-  # ==========================================================================
-  redis:
-    image: redis:7-alpine
-    container_name: fastapi_redis
-    restart: unless-stopped
-    
     ports:
-      - "6379:6379"
-    
+      - "5432:5432"
+
     volumes:
-      - redis_data:/data
-    
+      - postgres_data:/var/lib/postgresql/data
+
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-cric_geo} -d ${DB_NAME:-cric_geo_db}"]
       interval: 10s
       timeout: 5s
       retries: 5
-    
+      start_period: 20s
+
     networks:
       - backend_network
-    
-    # Uncomment to enable Redis
-    profiles:
-      - cache
 
-# ============================================================================
+    profiles:
+      - local-db
+
+  # ==========================================================================
+  # OPTIONAL: PGADMIN (DATABASE MANAGEMENT)
+  # ==========================================================================
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: cricgeo_pgadmin
+    restart: unless-stopped
+
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@cricgeo.app}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin123}
+
+    ports:
+      - "8080:80"
+
+    depends_on:
+      - postgres
+
+    networks:
+      - backend_network
+
+    profiles:
+      - tools
+
+# ==========================================================================
 # NETWORKS
-# ============================================================================
+# ==========================================================================
 networks:
   backend_network:
     driver: bridge
 
-# ============================================================================
+# ==========================================================================
 # VOLUMES
-# ============================================================================
+# ==========================================================================
 volumes:
-  mysql_data:
+  postgres_data:
     driver: local
-  redis_data:
-    driver: local
-
-# ============================================================================
-# USAGE INSTRUCTIONS
-# ============================================================================
-#
-# START ALL SERVICES:
-# docker-compose up -d
-#
-# START WITH OPTIONAL SERVICES:
-# docker-compose --profile tools --profile cache up -d
-#
-# VIEW LOGS:
-# docker-compose logs -f
-# docker-compose logs -f backend
-# docker-compose logs -f mysql
-#
-# STOP ALL SERVICES:
-# docker-compose down
-#
-# STOP AND REMOVE VOLUMES (WARNING: Deletes data):
-# docker-compose down -v
-#
-# REBUILD BACKEND:
-# docker-compose up -d --build backend
-#
-# RUN DATABASE MIGRATIONS:
-# docker-compose exec backend alembic upgrade head
-#
-# ACCESS BACKEND SHELL:
-# docker-compose exec backend /bin/bash
-#
-# ACCESS MYSQL CLI:
-# docker-compose exec mysql mysql -u root -p
-#
-# SCALE BACKEND (multiple workers):
-# docker-compose up -d --scale backend=3
-#
-# CHECK SERVICE HEALTH:
-# docker-compose ps
-#
-# SERVICES:
-# - Backend API:    http://localhost:8000
-# - API Docs:       http://localhost:8000/docs
-# - phpMyAdmin:     http://localhost:8080 (with --profile tools)
-# - MySQL:          localhost:3306
-# - Redis:          localhost:6379 (with --profile cache)
-#
-# ============================================================================

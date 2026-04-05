@@ -11,8 +11,8 @@ from typing import AsyncGenerator
 
 # Create async engine
 # The DATABASE_URL is environment-driven, allowing easy switching between:
-# - MySQL (mysql+aiomysql)
 # - PostgreSQL (postgresql+asyncpg)
+# - MySQL (mysql+aiomysql)
 # - SQLite (sqlite+aiosqlite)
 # Just change the connection string in .env file
 engine = create_async_engine(

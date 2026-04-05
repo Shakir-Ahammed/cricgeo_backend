@@ -1,6 +1,6 @@
 """
-FastAPI SaaS Backend Application
-Main application entry point with route registration and middleware setup
+CricGeo backend application.
+Main application entry point with route registration and middleware setup.
 """
 
 from fastapi import FastAPI, Request
@@ -48,7 +48,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="Production-ready FastAPI backend for SaaS applications with modular architecture",
+    description="CricGeo modular FastAPI backend",
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
@@ -63,7 +63,7 @@ app = FastAPI(
 # CORS Middleware - Configure allowed origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for development
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -129,7 +129,7 @@ async def root():
     """
     return {
         "success": True,
-        "message": "Welcome to FastAPI SaaS Chat bot Backend",
+        "message": "Welcome to CricGeo Backend",
         "data": {
             "service": settings.APP_NAME,
             "version": settings.APP_VERSION,

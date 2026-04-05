@@ -1,6 +1,3 @@
-"""
-FastAPI SaaS Backend Application
-Production-ready modular architecture
-"""
+"""CricGeo backend package."""
 
 __version__ = "1.0.0"

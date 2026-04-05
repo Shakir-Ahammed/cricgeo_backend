@@ -39,6 +39,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         r'^/auth/register$',
         r'^/auth/refresh$',
         r'^/auth/verify-email.*',  # Both POST and GET with query params
+        r'^/auth/veryfy-email.*',  # Legacy typo support for older email links
         r'^/auth/request-password-reset$',
         r'^/auth/reset-password$',
         r'^/auth/google/login$',  # Google OAuth2 login initiation

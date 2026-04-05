@@ -12,11 +12,11 @@ python-multipart==0.0.6
 sqlalchemy==2.0.25
 alembic==1.13.1
 
-# MySQL async driver
-aiomysql==0.2.0
+# PostgreSQL async driver
+asyncpg==0.29.0
 
-# PostgreSQL async driver (optional - install when switching to PostgreSQL)
-# asyncpg==0.29.0
+# MySQL async driver (optional)
+# aiomysql==0.2.0
 
 # SQLite async driver (optional - for development)
 # aiosqlite==0.19.0
@@ -58,7 +58,7 @@ email-validator==2.1.0
 #   pip install -r requirements.txt
 #
 # Install with PostgreSQL support:
-#   pip install -r requirements.txt asyncpg
+#   pip install -r requirements.txt
 #
 # Install with development tools:
 #   pip install -r requirements.txt pytest pytest-asyncio httpx black flake8 mypy

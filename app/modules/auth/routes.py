@@ -78,6 +78,18 @@ async def verify_email_get(
     return await AuthController.verify_email_get(token, db)
 
 
+@router.get("/veryfy-email", response_model=Dict[str, Any])
+async def verify_email_get_legacy(
+    token: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Legacy typo alias for old verification links.
+    Usage: /auth/veryfy-email?token=<token>
+    """
+    return await AuthController.verify_email_get(token, db)
+
+
 @router.post("/request-password-reset", response_model=Dict[str, Any])
 async def request_password_reset(
     request_body: RequestPasswordResetRequest,

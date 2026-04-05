@@ -27,11 +27,9 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Install system dependencies required for building Python packages
 # - gcc: C compiler for building Python packages with C extensions
-# - default-libmysqlclient-dev: MySQL client library for aiomysql
 # - pkg-config: Helper tool for compiling applications
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
-    default-libmysqlclient-dev \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
@@ -63,11 +61,9 @@ ENV PYTHONUNBUFFERED=1 \
     WORKERS=4 \
     WORKER_CLASS=uvicorn.workers.UvicornWorker
 
-# Install only runtime dependencies (not build tools)
-# - default-libmysqlclient-dev: MySQL client library (runtime)
+# Install only runtime dependencies
 # - curl: For health checks
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    default-libmysqlclient-dev \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
@@ -161,7 +157,7 @@ CMD gunicorn app.main:app \
 # RUN CONTAINER (Production with custom workers):
 # docker run -p 8000:8000 \
 #   -e WORKERS=8 \
-#   -e DATABASE_URL="mysql+aiomysql://user:pass@host:3306/db" \
+#   -e DATABASE_URL="postgresql+asyncpg://user:pass@host:5432/db" \
 #   -e JWT_SECRET="your-secret" \
 #   fastapi-backend:latest
 #
