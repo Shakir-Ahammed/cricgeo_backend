@@ -16,7 +16,7 @@ from app.modules.auth.schema import (
 )
 from app.modules.users.schema import UserOut
 from app.core.security import (
-    hash_password, verify_password, generate_random_token, hash_token
+    hash_password, verify_password, create_access_token, generate_random_token, hash_token
 )
 from app.core.config import settings
 from app.helpers.utils import normalize_email
@@ -124,8 +124,28 @@ class AuthService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Account is inactive"
             )
+
+        # OAuth-only accounts may not have a local password hash.
+        if not user.hashed_password:
+            if user.provider == AuthProvider.GOOGLE:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="This account uses Google sign-in. Please login with Google."
+                )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password"
+            )
         
-        if not verify_password(request.password, user.hashed_password):
+        try:
+            is_valid_password = verify_password(request.password, user.hashed_password)
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password"
+            )
+
+        if not is_valid_password:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password"

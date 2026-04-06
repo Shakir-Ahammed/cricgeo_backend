@@ -115,7 +115,7 @@ class EmailService:
 
         logo_markup = (
             f'<img src="{self.logo_url}" alt="{self.brand_name} Logo" '
-            'style="height:62px;max-width:260px;object-fit:contain;display:block;margin:0 auto;" />'
+            'style="width:320px;max-width:88%;height:auto;display:block;margin:0 auto;" />'
             if self.logo_url
             else '<div style="font-weight:900;font-size:36px;letter-spacing:1px;color:#0b2a5b;">CRICGEO</div>'
         )
@@ -129,13 +129,9 @@ class EmailService:
                     <td align="center">
                         <table role="presentation" width="680" cellspacing="0" cellpadding="0" style="max-width:680px;border-radius:22px;overflow:hidden;background:linear-gradient(132deg,#0b2a5b 0%,#204aa6 55%,#d91f4b 100%);box-shadow:0 18px 40px rgba(11,42,91,.2);">
                             <tr>
-                                <td style="padding:28px 24px 22px 24px;text-align:center;">
-                                    <table role="presentation" cellspacing="0" cellpadding="0" align="center" style="background:#ffffff;border-radius:12px;box-shadow:0 10px 22px rgba(8,31,76,.22);">
-                                        <tr>
-                                            <td style="padding:14px 24px;">{logo_markup}</td>
-                                        </tr>
-                                    </table>
-                                    <div style="font-size:44px;line-height:8px;color:rgba(255,255,255,.22);letter-spacing:7px;margin:12px 0 16px 0;">. . . . . . .</div>
+                                <td style="padding:22px 24px 18px 24px;text-align:center;">
+                                    <div style="margin:0 auto 14px auto;">{logo_markup}</div>
+                                    <div style="font-size:30px;line-height:8px;color:rgba(255,255,255,.2);letter-spacing:6px;margin:6px 0 12px 0;">. . . . . .</div>
                                     <div style="font-size:46px;font-weight:800;color:#ffffff;line-height:1.18;">Welcome to {self.brand_name}</div>
                                     <div style="margin-top:10px;font-size:23px;color:rgba(255,255,255,.96);font-weight:600;">Live Cricket Score, Smarter.</div>
                                 </td>
