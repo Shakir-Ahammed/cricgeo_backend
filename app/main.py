@@ -6,6 +6,7 @@ Main application entry point with route registration and middleware setup.
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.security import HTTPBearer
 from contextlib import asynccontextmanager
 import uvicorn
 
@@ -55,6 +56,9 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Security scheme for Swagger UI
+security = HTTPBearer()
+
 
 # ============================================================================
 # MIDDLEWARE CONFIGURATION
@@ -85,7 +89,11 @@ async def global_exception_handler(request: Request, exc: Exception):
     Global exception handler for unhandled exceptions
     Returns standardized error response
     """
+    import traceback
+    
+    # Print full error to console for debugging
     print(f"❌ Unhandled exception: {exc}")
+    print(f"❌ Traceback: {traceback.format_exc()}")
     
     return JSONResponse(
         status_code=500,
@@ -93,7 +101,9 @@ async def global_exception_handler(request: Request, exc: Exception):
             "success": False,
             "message": "Internal server error",
             "data": {
-                "detail": str(exc) if settings.DEBUG else "An unexpected error occurred"
+                "detail": str(exc) if settings.DEBUG else "An unexpected error occurred",
+                "type": type(exc).__name__ if settings.DEBUG else None,
+                "traceback": traceback.format_exc() if settings.DEBUG else None
             }
         }
     )

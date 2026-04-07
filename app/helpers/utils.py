@@ -4,6 +4,7 @@ Reusable helper functions used across the application
 """
 
 import re
+import random
 from typing import Optional
 
 
@@ -146,3 +147,23 @@ def sanitize_string(text: str, allow_html: bool = False) -> str:
         text = text.replace("'", '&#x27;')
     
     return text
+
+
+def generate_otp(length: int = 6) -> str:
+    """
+    Generate a random numeric OTP code
+    
+    Args:
+        length: Length of OTP (default 6)
+        
+    Returns:
+        String of random digits
+        
+    Example:
+        >>> otp = generate_otp()
+        >>> len(otp)
+        6
+        >>> otp.isdigit()
+        True
+    """
+    return ''.join([str(random.randint(0, 9)) for _ in range(length)])

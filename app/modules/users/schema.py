@@ -5,7 +5,7 @@ User Pydantic schemas
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 from datetime import datetime
-from app.modules.users.model import PlanType, UserType, UserStatus
+from app.modules.users.model import PlanType, UserType, UserStatus, Gender
 
 
 class UserCreate(BaseModel):
@@ -46,12 +46,15 @@ class UserUpdate(BaseModel):
 
 class UserOut(BaseModel):
     id: int
-    name: str
+    name: Optional[str] = None
     email: str
     phone: Optional[str] = None
+    gender: Optional[Gender] = None
+    profile_image: Optional[str] = None
     plan: PlanType
     user_type: UserType
     is_email_verified: bool
+    profile_completed: bool
     status: UserStatus
     last_login_at: Optional[datetime] = None
     created_at: datetime

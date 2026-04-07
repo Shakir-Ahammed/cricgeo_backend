@@ -16,12 +16,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
     Middleware to verify JWT tokens and attach user data to request
     
     Public routes (skip authentication):
-    - /auth/login
-    - /auth/register
-    - /auth/refresh
-    - /auth/verify-email
-    - /auth/request-password-reset
-    - /auth/reset-password
+    - /auth/request-otp
+    - /auth/verify-otp
+    - /auth/google/login
+    - /auth/google/callback
     - /health
     - /docs
     - /openapi.json
@@ -35,15 +33,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
     
     # Routes that don't require authentication
     PUBLIC_ROUTES = [
-        r'^/auth/login$',
-        r'^/auth/register$',
-        r'^/auth/refresh$',
-        r'^/auth/verify-email.*',  # Both POST and GET with query params
-        r'^/auth/veryfy-email.*',  # Legacy typo support for older email links
-        r'^/auth/request-password-reset$',
-        r'^/auth/reset-password$',
         r'^/auth/google/login$',  # Google OAuth2 login initiation
         r'^/auth/google/callback.*',  # Google OAuth2 callback with query params
+        r'^/auth/request-otp$',  # OTP request endpoint
+        r'^/auth/verify-otp$',  # OTP verification endpoint
         r'^/health$',
         r'^/docs.*',
         r'^/openapi.json$',

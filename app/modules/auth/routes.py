@@ -7,110 +7,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Dict, Any
 
 from app.core.db import get_db
+from app.core.security import get_current_user
 from app.modules.auth.controller import AuthController
 from app.modules.auth.schema import (
-    RegisterRequest, LoginRequest, RefreshTokenRequest,
-    VerifyEmailRequest, RequestPasswordResetRequest, PasswordResetRequest
+    RequestOTPRequest, VerifyOTPRequest, CompleteProfileRequest
 )
 
 router = APIRouter(
     prefix="/auth",
     tags=["Authentication"]
 )
-
-
-@router.post("/register", response_model=Dict[str, Any])
-async def register(
-    request_body: RegisterRequest,
-    req: Request,
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Register a new user and send email verification token
-    """
-    return await AuthController.register(request_body, req, db)
-
-
-@router.post("/login", response_model=Dict[str, Any])
-async def login(
-    request_body: LoginRequest,
-    req: Request,
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Authenticate user and get JWT tokens
-    """
-    return await AuthController.login(request_body, req, db)
-
-
-@router.post("/refresh", response_model=Dict[str, Any])
-async def refresh_token(
-    request_body: RefreshTokenRequest,
-    req: Request,
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Refresh access token using refresh token
-    """
-    return await AuthController.refresh_token(request_body, req, db)
-
-
-@router.post("/verify-email", response_model=Dict[str, Any])
-async def verify_email(
-    request_body: VerifyEmailRequest,
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Verify user email with token (POST)
-    """
-    return await AuthController.verify_email(request_body, db)
-
-
-@router.get("/verify-email", response_model=Dict[str, Any])
-async def verify_email_get(
-    token: str,
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Verify user email with token (GET - for email links)
-    Usage: /auth/verify-email?token=<token>
-    """
-    return await AuthController.verify_email_get(token, db)
-
-
-@router.get("/veryfy-email", response_model=Dict[str, Any])
-async def verify_email_get_legacy(
-    token: str,
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Legacy typo alias for old verification links.
-    Usage: /auth/veryfy-email?token=<token>
-    """
-    return await AuthController.verify_email_get(token, db)
-
-
-@router.post("/request-password-reset", response_model=Dict[str, Any])
-async def request_password_reset(
-    request_body: RequestPasswordResetRequest,
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Request password reset token (will be sent via email)
-    """
-    return await AuthController.request_password_reset(request_body, db)
-
-
-@router.post("/reset-password", response_model=Dict[str, Any])
-async def reset_password(
-    request_body: PasswordResetRequest,
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Reset password with token
-    """
-    return await AuthController.reset_password(request_body, db)
-
 
 @router.get("/google/login", response_model=Dict[str, Any])
 async def google_login(
@@ -134,3 +40,61 @@ async def google_callback(
     Exchange authorization code for user information and JWT tokens
     """
     return await AuthController.google_callback(code, req, db)
+
+
+
+# ============================================================================
+# OTP AUTHENTICATION ROUTES
+# ============================================================================
+
+@router.post("/request-otp", response_model=Dict[str, Any])
+async def request_otp(
+    request_body: RequestOTPRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Request OTP for mobile-first authentication
+    - Generates 6-digit OTP
+    - Sends to email
+    - Valid for 5 minutes
+    - Rate limited: max 3 requests per minute
+    """
+    return await AuthController.request_otp(request_body, db)
+
+
+@router.post("/verify-otp", response_model=Dict[str, Any])
+async def verify_otp(
+    request_body: VerifyOTPRequest,
+    req: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Verify OTP and authenticate user
+    - If user exists: login and return JWT
+    - If user doesn't exist: create minimal user and return JWT with is_new_user=true
+    - Max 5 verification attempts per OTP
+    """
+    return await AuthController.verify_otp(request_body, req, db)
+
+
+@router.post("/complete-profile", response_model=Dict[str, Any])
+async def complete_profile(
+    request_body: CompleteProfileRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Complete user profile after OTP registration
+    Requires authentication token
+    
+    Required fields:
+    - name: User's full name (2-100 characters)
+    - gender: User's gender (male, female, or other)
+    - phone: User's phone number (10-20 characters)
+    
+    Optional fields:
+    - profile_image: URL to profile image
+    
+    Sets profile_completed=true after successful completion
+    """
+    return await AuthController.complete_profile(request_body, user, db)

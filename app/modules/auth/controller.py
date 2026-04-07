@@ -9,9 +9,7 @@ from typing import Dict, Any
 from app.core.db import get_db
 from app.modules.auth.service import AuthService
 from app.modules.auth.schema import (
-    RegisterRequest, LoginRequest, RefreshTokenRequest,
-    VerifyEmailRequest, RequestPasswordResetRequest, PasswordResetRequest,
-    GoogleCallbackRequest
+    RequestOTPRequest, VerifyOTPRequest, CompleteProfileRequest
 )
 
 
@@ -19,125 +17,6 @@ class AuthController:
     """
     Controller for auth endpoints
     """
-    
-    @staticmethod
-    async def register(
-        request_body: RegisterRequest,
-        req: Request,
-        db: AsyncSession = Depends(get_db)
-    ) -> Dict[str, Any]:
-        service = AuthService(db)
-        ip = req.client.host if req.client else None
-        device = req.headers.get("User-Agent")
-        
-        register_response = await service.register_user(request_body, ip, device)
-        
-        return {
-            "success": True,
-            "message": register_response.message,
-            "data": {"user": register_response.user.model_dump()}
-        }
-    
-    @staticmethod
-    async def login(
-        request_body: LoginRequest,
-        req: Request,
-        db: AsyncSession = Depends(get_db)
-    ) -> Dict[str, Any]:
-        service = AuthService(db)
-        ip = req.client.host if req.client else None
-        
-        auth_response = await service.login_user(request_body, ip)
-        
-        return {
-            "success": True,
-            "message": "Login successful",
-            "data": auth_response.model_dump()
-        }
-    
-    @staticmethod
-    async def refresh_token(
-        request_body: RefreshTokenRequest,
-        req: Request,
-        db: AsyncSession = Depends(get_db)
-    ) -> Dict[str, Any]:
-        service = AuthService(db)
-        ip = req.client.host if req.client else None
-        device = req.headers.get("User-Agent")
-        
-        token_response = await service.refresh_access_token(
-            request_body.refresh_token, ip, device
-        )
-        
-        return {
-            "success": True,
-            "message": "Token refreshed successfully",
-            "data": token_response.model_dump()
-        }
-    
-    @staticmethod
-    async def verify_email(
-        request_body: VerifyEmailRequest,
-        db: AsyncSession = Depends(get_db)
-    ) -> Dict[str, Any]:
-        service = AuthService(db)
-        user = await service.verify_email(request_body)
-        
-        return {
-            "success": True,
-            "message": "Email verified successfully",
-            "data": user.model_dump()
-        }
-    
-    @staticmethod
-    async def verify_email_get(
-        token: str,
-        db: AsyncSession = Depends(get_db)
-    ) -> Dict[str, Any]:
-        """
-        Verify email via GET request (for direct email links)
-        """
-        service = AuthService(db)
-        request_body = VerifyEmailRequest(token=token)
-        user = await service.verify_email(request_body)
-        
-        return {
-            "success": True,
-            "message": "Email verified successfully! You can now login.",
-            "data": {
-                "email": user.email,
-                "name": user.name,
-                "verified": True
-            }
-        }
-    
-    @staticmethod
-    async def request_password_reset(
-        request_body: RequestPasswordResetRequest,
-        db: AsyncSession = Depends(get_db)
-    ) -> Dict[str, Any]:
-        service = AuthService(db)
-        message = await service.request_password_reset(request_body)
-        
-        return {
-            "success": True,
-            "message": message,
-            "data": None
-        }
-    
-    @staticmethod
-    async def reset_password(
-        request_body: PasswordResetRequest,
-        db: AsyncSession = Depends(get_db)
-    ) -> Dict[str, Any]:
-        service = AuthService(db)
-        message = await service.reset_password(request_body)
-        
-        return {
-            "success": True,
-            "message": message,
-            "data": None
-        }
     
     @staticmethod
     async def google_login(
@@ -174,4 +53,66 @@ class AuthController:
             "success": True,
             "message": "Google login successful",
             "data": auth_response.model_dump()
+        }
+
+    
+    # ============================================================================
+    # OTP AUTHENTICATION CONTROLLERS
+    # ============================================================================
+    
+    @staticmethod
+    async def request_otp(
+        request_body: "RequestOTPRequest",
+        db: AsyncSession = Depends(get_db)
+    ) -> Dict[str, Any]:
+        """
+        Request OTP for email-based authentication
+        """
+        service = AuthService(db)
+        response = await service.request_otp(request_body)
+        
+        return {
+            "success": True,
+            "message": response.message,
+            "data": {"email": response.email}
+        }
+    
+    @staticmethod
+    async def verify_otp(
+        request_body: "VerifyOTPRequest",
+        req: Request,
+        db: AsyncSession = Depends(get_db)
+    ) -> Dict[str, Any]:
+        """
+        Verify OTP and login/register user
+        """
+        service = AuthService(db)
+        ip = req.client.host if req.client else None
+        device = req.headers.get("User-Agent")
+        
+        response = await service.verify_otp(request_body, ip, device)
+        
+        return {
+            "success": True,
+            "message": "OTP verified successfully",
+            "data": response.model_dump()
+        }
+    
+    @staticmethod
+    async def complete_profile(
+        request_body: "CompleteProfileRequest",
+        user: dict,
+        db: AsyncSession = Depends(get_db)
+    ) -> Dict[str, Any]:
+        """
+        Complete user profile after OTP registration
+        """
+        service = AuthService(db)
+        
+        response = await service.complete_profile(user["id"], request_body)
+        
+        return {
+            "success": True,
+            "message": response.message,
+            "data": {"user": response.user.model_dump()}
         }

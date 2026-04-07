@@ -106,18 +106,17 @@ class EmailService:
         )
         return result
     
-    async def send_verification_email(self, to_email: str, to_name: str, token: str) -> bool:
+    async def send_otp_email(self, to_email: str, otp_code: str) -> bool:
         """
-        Send email verification link
+        Send OTP code for authentication
         """
-        verification_url = f"{settings.FRONTEND_URL.rstrip('/')}/auth/verify-email?token={token}"
-        subject = f"Verify Your Email - {self.brand_name}"
+        subject = f"Your OTP Code - {self.brand_name}"
 
         logo_markup = (
             f'<img src="{self.logo_url}" alt="{self.brand_name} Logo" '
-            'style="width:320px;max-width:88%;height:auto;display:block;margin:0 auto;" />'
+            'style="width:280px;max-width:88%;height:auto;display:block;margin:0 auto;" />'
             if self.logo_url
-            else '<div style="font-weight:900;font-size:36px;letter-spacing:1px;color:#0b2a5b;">CRICGEO</div>'
+            else '<div style="font-weight:900;font-size:32px;letter-spacing:1px;color:#0b2a5b;">CRICGEO</div>'
         )
 
         html_content = f"""
@@ -127,91 +126,33 @@ class EmailService:
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:24px 12px;">
                 <tr>
                     <td align="center">
-                        <table role="presentation" width="680" cellspacing="0" cellpadding="0" style="max-width:680px;border-radius:22px;overflow:hidden;background:linear-gradient(132deg,#0b2a5b 0%,#204aa6 55%,#d91f4b 100%);box-shadow:0 18px 40px rgba(11,42,91,.2);">
+                        <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width:600px;border-radius:20px;overflow:hidden;background:#ffffff;box-shadow:0 16px 36px rgba(11,42,91,.18);">
                             <tr>
-                                <td style="padding:22px 24px 18px 24px;text-align:center;">
-                                    <div style="margin:0 auto 14px auto;">{logo_markup}</div>
-                                    <div style="font-size:30px;line-height:8px;color:rgba(255,255,255,.2);letter-spacing:6px;margin:6px 0 12px 0;">. . . . . .</div>
-                                    <div style="font-size:46px;font-weight:800;color:#ffffff;line-height:1.18;">Welcome to {self.brand_name}</div>
-                                    <div style="margin-top:10px;font-size:23px;color:rgba(255,255,255,.96);font-weight:600;">Live Cricket Score, Smarter.</div>
+                                <td style="background:linear-gradient(125deg,#0b2a5b 0%,#1b4cb4 50%,#d91f4b 100%);padding:28px 24px;text-align:center;">
+                                    <div style="margin:0 auto 12px auto;">{logo_markup}</div>
+                                    <div style="font-size:24px;font-weight:700;color:#ffffff;margin-top:14px;">Verification Code</div>
                                 </td>
                             </tr>
                             <tr>
-                                <td style="padding:0 18px 18px 18px;">
-                                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#ffffff;border-radius:28px;overflow:hidden;">
-                                        <tr>
-                                            <td style="padding:34px 34px 16px 34px;">
-                                                <h2 style="margin:0 0 14px 0;font-size:26px;line-height:1.2;color:#12316d;">Hi {to_name},</h2>
-                                                <p style="margin:0 0 22px 0;font-size:16px;line-height:1.7;color:#3a4c6a;">
-                                                    Your account is almost ready. Verify your email to activate your {self.brand_name} account.
-                                                </p>
-                                                <div style="margin:28px 0 30px 0;text-align:center;">
-                                                    <a href="{verification_url}" style="display:inline-block;padding:14px 32px;background:#1b4cb4;color:#ffffff;text-decoration:none;border-radius:14px;font-size:22px;font-weight:800;box-shadow:0 10px 24px rgba(19,67,167,.28);">Verify Email</a>
-                                                </div>
-                                                <p style="margin:0 0 10px 0;font-size:14px;color:#5e6e86;">If the button does not work, use this link:</p>
-                                                <p style="margin:0 0 18px 0;word-break:break-all;font-size:15px;line-height:1.5;"><a href="{verification_url}" style="color:#1b4cb4;">{verification_url}</a></p>
-                                                <p style="margin:0 0 10px 0;font-size:14px;color:#5e6e86;">This link expires in 24 hours.</p>
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td style="padding:16px 30px 22px 30px;border-top:1px solid #e6ebf3;color:#7c8898;font-size:13px;text-align:center;">
-                                                © 2026 {self.brand_name}. All rights reserved.
-                                            </td>
-                                        </tr>
-                                    </table>
-                                </td>
-                            </tr>
-                        </table>
-                    </td>
-                </tr>
-            </table>
-        </body>
-        </html>
-        """
-
-        text_content = (
-            f"Welcome to {self.brand_name}!\n\n"
-            f"Hi {to_name},\n\n"
-            "Your account is almost ready. Verify your email with this link:\n"
-            f"{verification_url}\n\n"
-            "This link expires in 24 hours.\n\n"
-            f"© 2026 {self.brand_name}"
-        )
-        
-        return await self.send_email(to_email, subject, html_content, text_content)
-    
-    async def send_password_reset_email(self, to_email: str, to_name: str, token: str) -> bool:
-        """
-        Send password reset link
-        """
-        reset_url = f"{settings.FRONTEND_URL.rstrip('/')}/reset-password?token={token}"
-        subject = f"Reset Your Password - {self.brand_name}"
-
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <body style="margin:0;background:#edf1f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#13233a;">
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:28px 14px;">
-                <tr>
-                    <td align="center">
-                        <table role="presentation" width="640" cellspacing="0" cellpadding="0" style="max-width:640px;background:#fff;border-radius:18px;overflow:hidden;box-shadow:0 16px 34px rgba(11,42,91,.16);">
-                            <tr>
-                                <td style="background:linear-gradient(120deg,#0b2a5b 0%,#143f8f 60%,#cf1d3f 100%);padding:20px 28px;color:#fff;font-size:20px;font-weight:800;text-align:center;">{self.brand_name} Security</td>
-                            </tr>
-                            <tr>
-                                <td style="padding:30px;">
-                                    <h2 style="margin:0 0 10px 0;color:#0b2a5b;">Reset password request</h2>
-                                    <p style="margin:0 0 18px 0;color:#324761;line-height:1.7;">Hi {to_name}, we received a request to reset your password.</p>
-                                    <div style="text-align:center;margin:24px 0;">
-                                        <a href="{reset_url}" style="display:inline-block;padding:13px 26px;background:#cf1d3f;color:#fff;text-decoration:none;border-radius:10px;font-weight:700;box-shadow:0 8px 20px rgba(207,29,63,.3);">Reset Password</a>
+                                <td style="padding:36px 32px;">
+                                    <p style="margin:0 0 20px 0;font-size:16px;line-height:1.6;color:#3a4c6a;">
+                                        Your one-time password (OTP) for {self.brand_name} is:
+                                    </p>
+                                    <div style="background:linear-gradient(135deg,#f0f4f9 0%,#e1e8f2 100%);border:2px solid #1b4cb4;border-radius:14px;padding:24px;text-align:center;margin:24px 0;">
+                                        <div style="font-size:48px;font-weight:900;color:#0b2a5b;letter-spacing:8px;font-family:'Courier New',monospace;">{otp_code}</div>
                                     </div>
-                                    <p style="margin:0 0 8px 0;font-size:13px;color:#607089;">If the button does not work, use this link:</p>
-                                    <p style="margin:0;word-break:break-all;"><a href="{reset_url}" style="color:#0d3f93;">{reset_url}</a></p>
-                                    <p style="margin:18px 0 0 0;font-size:13px;color:#607089;">This link expires in 1 hour.</p>
+                                    <p style="margin:20px 0 10px 0;font-size:15px;color:#5e6e86;">
+                                        This code is valid for <strong>5 minutes</strong>.
+                                    </p>
+                                    <p style="margin:10px 0 0 0;font-size:14px;color:#7c8898;">
+                                        If you didn't request this code, please ignore this email.
+                                    </p>
                                 </td>
                             </tr>
                             <tr>
-                                <td style="padding:14px 28px 22px 28px;border-top:1px solid #e9eef5;color:#7b8798;font-size:12px;text-align:center;">© 2026 {self.brand_name}</td>
+                                <td style="padding:16px 28px 22px 28px;border-top:1px solid #e6ebf3;color:#7c8898;font-size:13px;text-align:center;">
+                                    © 2026 {self.brand_name}. All rights reserved.
+                                </td>
                             </tr>
                         </table>
                     </td>
@@ -222,11 +163,10 @@ class EmailService:
         """
 
         text_content = (
-            f"{self.brand_name} Security\n\n"
-            f"Hi {to_name},\n\n"
-            "We received a request to reset your password. Use this link:\n"
-            f"{reset_url}\n\n"
-            "This link expires in 1 hour.\n\n"
+            f"{self.brand_name} - Verification Code\n\n"
+            f"Your OTP code is: {otp_code}\n\n"
+            "This code is valid for 5 minutes.\n\n"
+            "If you didn't request this code, please ignore this email.\n\n"
             f"© 2026 {self.brand_name}"
         )
         
