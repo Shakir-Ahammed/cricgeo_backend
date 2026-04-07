@@ -10,13 +10,25 @@ from app.modules.users.schema import UserOut
 
 class TokenResponse(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
-    expires_in: int
+    expires_in: int  # Access token expiry in seconds
 
 
 class AuthResponse(BaseModel):
     user: UserOut
     tokens: TokenResponse
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str = Field(..., description="Refresh token to exchange for new access token")
+
+
+class RefreshTokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int
 
 
 class GoogleLoginResponse(BaseModel):
@@ -44,6 +56,7 @@ class VerifyOTPRequest(BaseModel):
 
 class VerifyOTPResponse(BaseModel):
     access_token: str
+    refresh_token: str
     is_new_user: bool
     token_type: str = "bearer"
     expires_in: int

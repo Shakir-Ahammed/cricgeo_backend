@@ -9,6 +9,7 @@ from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.core.config import settings
+import secrets
 import hashlib
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -65,6 +66,39 @@ def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta]
     to_encode.update({
         "exp": expire,
         "type": "access"
+    })
+    
+    encoded_jwt = jwt.encode(
+        to_encode,
+        settings.JWT_SECRET,
+        algorithm=settings.JWT_ALGORITHM
+    )
+    
+    return encoded_jwt
+
+
+def create_refresh_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
+    """
+    Create JWT refresh token (long-lived)
+    
+    Args:
+        data: Dictionary of data to encode in token (typically user_id)
+        expires_delta: Optional custom expiration time
+        
+    Returns:
+        Encoded JWT refresh token string
+    """
+    to_encode = data.copy()
+    
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
+    
+    to_encode.update({
+        "exp": expire,
+        "type": "refresh",
+        "jti": secrets.token_urlsafe(32)  # Unique token ID for tracking
     })
     
     encoded_jwt = jwt.encode(

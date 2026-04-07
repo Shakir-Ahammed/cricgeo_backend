@@ -37,10 +37,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
         r'^/auth/google/callback.*',  # Google OAuth2 callback with query params
         r'^/auth/request-otp$',  # OTP request endpoint
         r'^/auth/verify-otp$',  # OTP verification endpoint
+        r'^/auth/refresh-token$',  # Refresh token endpoint
+        r'^/auth/logout$',  # Logout endpoint (doesn't require auth, just refresh token)
         r'^/health$',
         r'^/docs.*',
         r'^/openapi.json$',
         r'^/redoc.*',
+        r'^/sso-test$',
         r'^/$',
     ]
     

@@ -21,7 +21,7 @@ from app.core.db import Base
 
 # Import all models here to ensure they are registered with Base.metadata
 from app.modules.users.model import User  # noqa: F401
-from app.modules.auth.model import RefreshToken, PasswordResetToken, EmailVerificationToken  # noqa: F401
+from app.modules.auth.model import OTP, RefreshToken  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

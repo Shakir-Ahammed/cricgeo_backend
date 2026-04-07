@@ -5,7 +5,7 @@ Main application entry point with route registration and middleware setup.
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.security import HTTPBearer
 from contextlib import asynccontextmanager
 import uvicorn
@@ -147,6 +147,70 @@ async def root():
             "health": "/health"
         }
     }
+
+
+@app.get("/sso-test", tags=["Testing"], response_class=HTMLResponse)
+async def sso_test_page():
+        """
+        Minimal page to manually test Google SSO flow.
+        """
+        return """
+<!doctype html>
+<html lang=\"en\">
+<head>
+    <meta charset=\"utf-8\" />
+    <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\" />
+    <title>CricGeo SSO Test</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif; background: #f3f6fb; margin: 0; padding: 24px; }
+        .card { max-width: 760px; margin: 0 auto; background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,.08); }
+        h1 { margin-top: 0; font-size: 24px; }
+        button { background: #0d6efd; color: #fff; border: 0; border-radius: 10px; padding: 12px 16px; cursor: pointer; font-size: 15px; }
+        button:hover { background: #0a58ca; }
+        pre { background: #0f172a; color: #e2e8f0; padding: 14px; border-radius: 10px; overflow-x: auto; }
+        .muted { color: #475569; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class=\"card\">
+        <h1>Google SSO Test</h1>
+        <p class=\"muted\">Click the button, sign in with Google, and you will be redirected back here with tokens.</p>
+        <button id=\"loginBtn\">Login With Google</button>
+        <h3>Callback Result</h3>
+        <pre id=\"result\">No callback data yet.</pre>
+    </div>
+
+    <script>
+        function parseHash() {
+            const raw = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash;
+            const params = new URLSearchParams(raw);
+            const data = {};
+            for (const [key, value] of params.entries()) data[key] = value;
+            return data;
+        }
+
+        async function startGoogleLogin() {
+            const redirectTo = `${window.location.origin}/sso-test`;
+            const url = `/auth/google/login?redirect_to=${encodeURIComponent(redirectTo)}`;
+            const res = await fetch(url);
+            const body = await res.json();
+            if (!body.success) {
+                document.getElementById('result').textContent = JSON.stringify(body, null, 2);
+                return;
+            }
+            window.location.href = body.data.authorization_url;
+        }
+
+        document.getElementById('loginBtn').addEventListener('click', startGoogleLogin);
+
+        const result = parseHash();
+        if (Object.keys(result).length > 0) {
+            document.getElementById('result').textContent = JSON.stringify(result, null, 2);
+        }
+    </script>
+</body>
+</html>
+"""
 
 
 # Include module routers
