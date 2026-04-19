@@ -3,6 +3,7 @@ Auth Pydantic schemas
 """
 
 from pydantic import BaseModel, EmailStr, Field
+from pydantic import model_validator
 from typing import Optional
 from datetime import datetime
 from app.modules.users.schema import UserOut
@@ -41,17 +42,36 @@ class GoogleCallbackRequest(BaseModel):
 
 # OTP Authentication Schemas
 class RequestOTPRequest(BaseModel):
-    email: EmailStr
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = Field(None, min_length=8, max_length=20)
+
+    @model_validator(mode="after")
+    def validate_identifier(self) -> "RequestOTPRequest":
+        if not self.email and not self.phone:
+            raise ValueError("Either email or phone is required")
+        if self.email and self.phone:
+            raise ValueError("Provide only one identifier: email or phone")
+        return self
 
 
 class RequestOTPResponse(BaseModel):
     message: str
-    email: str
+    channel: str
+    identifier: str
 
 
 class VerifyOTPRequest(BaseModel):
-    email: EmailStr
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = Field(None, min_length=8, max_length=20)
     otp: str = Field(..., min_length=6, max_length=6, pattern=r'^\d{6}$')
+
+    @model_validator(mode="after")
+    def validate_identifier(self) -> "VerifyOTPRequest":
+        if not self.email and not self.phone:
+            raise ValueError("Either email or phone is required")
+        if self.email and self.phone:
+            raise ValueError("Provide only one identifier: email or phone")
+        return self
 
 
 class VerifyOTPResponse(BaseModel):

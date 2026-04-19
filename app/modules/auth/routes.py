@@ -63,9 +63,9 @@ async def request_otp(
     """
     Request OTP for mobile-first authentication
     - Generates 6-digit OTP
-    - Sends to email
+    - Sends to email or SMS
     - Valid for 5 minutes
-    - Rate limited: max 3 requests per minute
+    - Rate limited: max 3 requests per minute per identifier
     """
     return await AuthController.request_otp(request_body, db)
 

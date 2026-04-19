@@ -79,7 +79,7 @@ class AuthController:
         db: AsyncSession = Depends(get_db)
     ) -> Dict[str, Any]:
         """
-        Request OTP for email-based authentication
+        Request OTP for email or SMS-based authentication
         """
         service = AuthService(db)
         response = await service.request_otp(request_body)
@@ -87,7 +87,10 @@ class AuthController:
         return {
             "success": True,
             "message": response.message,
-            "data": {"email": response.email}
+            "data": {
+                "channel": response.channel,
+                "identifier": response.identifier,
+            }
         }
     
     @staticmethod

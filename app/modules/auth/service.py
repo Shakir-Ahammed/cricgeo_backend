@@ -29,7 +29,7 @@ from app.modules.auth.schema import (
 from app.modules.users.schema import UserOut
 from app.core.security import create_access_token, create_refresh_token, hash_token, decode_token, verify_token_type
 from app.core.config import settings
-from app.helpers.utils import normalize_email, generate_otp
+from app.helpers.utils import normalize_email, normalize_phone, generate_otp
 
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
@@ -118,6 +118,13 @@ class AuthService:
 
     async def _get_user_by_email(self, email: str) -> Optional[User]:
         result = await self.db.execute(select(User).where(User.email == email))
+        return result.scalar_one_or_none()
+
+    async def _get_user_by_phone(self, phone: str) -> Optional[User]:
+        phone_candidates = {phone, f"+{phone}"}
+        if phone.startswith("880"):
+            phone_candidates.add(f"0{phone[3:]}")
+        result = await self.db.execute(select(User).where(User.phone.in_(list(phone_candidates))))
         return result.scalar_one_or_none()
 
     async def _get_user_by_id(self, user_id: int) -> Optional[User]:
@@ -458,14 +465,25 @@ class AuthService:
 
     async def request_otp(self, request: RequestOTPRequest) -> RequestOTPResponse:
         """
-        Generate and send OTP to email.
-        Rate limit: max 3 requests per minute per email.
+        Generate and send OTP to email or phone.
+        Rate limit: max 3 requests per minute per identifier.
         """
-        email = normalize_email(request.email)
+        if request.email:
+            channel = "email"
+            identifier = normalize_email(request.email)
+        else:
+            channel = "sms"
+            identifier = normalize_phone(request.phone or "")
+
+        if not identifier:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid identifier provided",
+            )
 
         one_minute_ago = datetime.utcnow() - timedelta(minutes=1)
         result = await self.db.execute(
-            select(OTP).where(and_(OTP.identifier == email, OTP.created_at > one_minute_ago))
+            select(OTP).where(and_(OTP.identifier == identifier, OTP.created_at > one_minute_ago))
         )
         recent_otps = result.scalars().all()
         if len(recent_otps) >= 3:
@@ -474,25 +492,51 @@ class AuthService:
                 detail="Too many OTP requests. Please wait a minute before trying again.",
             )
 
-        await self.db.execute(delete(OTP).where(OTP.identifier == email))
+        await self.db.execute(delete(OTP).where(OTP.identifier == identifier))
 
         otp_code = generate_otp(6)
         otp_hash = hash_token(otp_code)
         expires_at = datetime.utcnow() + timedelta(minutes=5)
 
-        self.db.add(OTP(identifier=email, code_hash=otp_hash, expires_at=expires_at, attempts=0))
+        self.db.add(OTP(identifier=identifier, code_hash=otp_hash, expires_at=expires_at, attempts=0))
         await self.db.commit()
 
-        from app.core.mailer import email_service
-
         try:
-            await email_service.send_otp_email(to_email=email, otp_code=otp_code)
+            if channel == "email":
+                from app.core.mailer import email_service
+
+                sent = await email_service.send_otp_email(to_email=identifier, otp_code=otp_code)
+                if not sent:
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail="Unable to send OTP email at the moment",
+                    )
+            else:
+                from app.core.sms import sms_service
+
+                sent = await sms_service.send_otp_sms(phone=identifier, otp_code=otp_code)
+                if not sent:
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail="Unable to send OTP SMS at the moment",
+                    )
+        except HTTPException:
+            # Remove unsent OTP so user can retry immediately.
+            await self.db.execute(delete(OTP).where(OTP.identifier == identifier))
+            await self.db.commit()
+            raise
         except Exception as e:
-            print(f"Failed to send OTP email: {e}")
+            await self.db.execute(delete(OTP).where(OTP.identifier == identifier))
+            await self.db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Failed to send OTP: {e}",
+            )
 
         return RequestOTPResponse(
-            message="OTP sent to your email. Valid for 5 minutes.",
-            email=email,
+            message=f"OTP sent via {channel}. Valid for 5 minutes.",
+            channel=channel,
+            identifier=identifier,
         )
 
     async def verify_otp(
@@ -507,11 +551,21 @@ class AuthService:
         New user: create minimal user and return is_new_user=true.
         Issues both access token and refresh token.
         """
-        email = normalize_email(request.email)
+        using_email = bool(request.email)
+        if using_email:
+            identifier = normalize_email(request.email or "")
+        else:
+            identifier = normalize_phone(request.phone or "")
+
+        if not identifier:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid identifier provided",
+            )
 
         result = await self.db.execute(
             select(OTP)
-            .where(and_(OTP.identifier == email, OTP.expires_at > datetime.utcnow()))
+            .where(and_(OTP.identifier == identifier, OTP.expires_at > datetime.utcnow()))
             .order_by(OTP.created_at.desc())
         )
         otp_record = result.scalar_one_or_none()
@@ -538,14 +592,16 @@ class AuthService:
         await self.db.delete(otp_record)
         await self.db.commit()
 
-        user = await self._get_user_by_email(email)
+        user = await self._get_user_by_email(identifier) if using_email else await self._get_user_by_phone(identifier)
         is_new_user = False
 
         if not user:
             is_new_user = True
+            generated_email = identifier if using_email else f"sms_{identifier}@sms.local"
             user = User(
-                email=email,
-                is_email_verified=True,
+                email=generated_email,
+                phone=None if using_email else identifier,
+                is_email_verified=using_email,
                 status=UserStatus.ACTIVE,
                 profile_completed=False,
                 hashed_password=None,
@@ -555,9 +611,11 @@ class AuthService:
             await self.db.commit()
             await self.db.refresh(user)
         else:
-            if not user.is_email_verified:
+            if using_email and not user.is_email_verified:
                 user.is_email_verified = True
                 user.status = UserStatus.ACTIVE
+            if not using_email and not user.phone:
+                user.phone = identifier
             user.last_login_at = datetime.utcnow()
             await self.db.commit()
             await self.db.refresh(user)

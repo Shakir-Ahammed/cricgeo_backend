@@ -28,6 +28,29 @@ def normalize_email(email: str) -> str:
     return email.strip().lower()
 
 
+def normalize_phone(phone: str) -> str:
+    """
+    Normalize phone number for consistent OTP matching and delivery.
+
+    Supports Bangladesh mobile formatting normalization:
+    - 017XXXXXXXX -> 88017XXXXXXXX
+    - +88017XXXXXXXX -> 88017XXXXXXXX
+    - 88017XXXXXXXX -> 88017XXXXXXXX
+    """
+    if not phone:
+        return ""
+
+    digits_only = re.sub(r"\D", "", phone)
+
+    if len(digits_only) == 11 and digits_only.startswith("01"):
+        return f"880{digits_only[1:]}"
+
+    if len(digits_only) == 10 and digits_only.startswith("1"):
+        return f"880{digits_only}"
+
+    return digits_only
+
+
 def validate_email_format(email: str) -> bool:
     """
     Validate email format using regex
