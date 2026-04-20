@@ -5,7 +5,7 @@ Auth Pydantic schemas
 from pydantic import BaseModel, EmailStr, Field
 from pydantic import model_validator
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, date
 from app.modules.users.schema import UserOut
 
 
@@ -13,7 +13,7 @@ class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
-    expires_in: int  # Access token expiry in seconds
+    expires_in: int  # seconds
 
 
 class AuthResponse(BaseModel):
@@ -30,14 +30,6 @@ class RefreshTokenResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int
-
-
-class GoogleLoginResponse(BaseModel):
-    authorization_url: str
-
-
-class GoogleCallbackRequest(BaseModel):
-    code: str
 
 
 # OTP Authentication Schemas
@@ -58,6 +50,7 @@ class RequestOTPResponse(BaseModel):
     message: str
     channel: str
     identifier: str
+    otp_type: str  # login or signup
 
 
 class VerifyOTPRequest(BaseModel):
@@ -84,19 +77,17 @@ class VerifyOTPResponse(BaseModel):
 
 class CompleteProfileRequest(BaseModel):
     name: str = Field(..., min_length=2, max_length=100, description="User's full name")
-    gender: str = Field(..., description="User's gender: male, female, or other")
-    phone: str = Field(..., min_length=10, max_length=20, description="User's phone number")
-    profile_image: Optional[str] = Field(None, max_length=500, description="URL to profile image (optional)")
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "name": "John Doe",
-                "gender": "male",
-                "phone": "+1234567890",
-                "profile_image": "https://example.com/images/profile.jpg"
-            }
-        }
+    gender: Optional[int] = Field(None, ge=1, le=3, description="1=male, 2=female, 3=other")
+    date_of_birth: Optional[date] = Field(None, description="Date of birth")
+    country_id: Optional[int] = Field(None, description="Country ID")
+    city_id: Optional[int] = Field(None, description="City ID")
+    profile_image: Optional[str] = Field(None, max_length=500, description="URL to profile image")
+    bio: Optional[str] = Field(None, max_length=1000, description="Short bio")
+
+
+class CompleteProfileResponse(BaseModel):
+    message: str
+    user: UserOut
 
 
 class CompleteProfileResponse(BaseModel):

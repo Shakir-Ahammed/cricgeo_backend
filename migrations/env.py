@@ -20,8 +20,10 @@ from app.core.config import settings
 from app.core.db import Base
 
 # Import all models here to ensure they are registered with Base.metadata
-from app.modules.users.model import User  # noqa: F401
-from app.modules.auth.model import OTP, RefreshToken  # noqa: F401
+from app.modules.users.model import User, UserSubscription  # noqa: F401
+from app.modules.auth.model import OTP, UserAuthProvider, UserSession  # noqa: F401
+from app.modules.profiles.model import Profile, PlayerRole, BattingInfo, BowlingInfo  # noqa: F401
+from app.modules.locations.model import Country, City  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

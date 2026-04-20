@@ -20,6 +20,8 @@ from app.middlewares.auth_middleware import AuthMiddleware
 # Route imports
 from app.modules.auth.routes import router as auth_router
 from app.modules.users.routes import router as users_router
+from app.modules.profiles.routes import router as profiles_router
+from app.modules.locations.routes import router as locations_router
 
 
 @asynccontextmanager
@@ -190,7 +192,7 @@ async def sso_test_page():
         }
 
         async function startGoogleLogin() {
-            const redirectTo = `${window.location.origin}/sso-test`;
+            const redirectTo = `${window.location.protocol}//${window.location.hostname}:${window.location.port || 8000}/sso-test`;
             const url = `/auth/google/login?redirect_to=${encodeURIComponent(redirectTo)}`;
             const res = await fetch(url);
             const body = await res.json();
@@ -214,13 +216,10 @@ async def sso_test_page():
 
 
 # Include module routers
-app.include_router(auth_router)      # /auth/*
-app.include_router(users_router)     # /users/*
-
-# Add more module routers here as your application grows
-# Example:
-# from app.modules.client.routes import router as client_router
-# app.include_router(client_router)  # /client/*
+app.include_router(auth_router)       # /auth/*
+app.include_router(users_router)      # /users/*
+app.include_router(profiles_router)   # /profiles/*
+app.include_router(locations_router)  # /locations/*
 
 
 # ============================================================================

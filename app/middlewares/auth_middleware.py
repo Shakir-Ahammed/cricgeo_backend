@@ -33,12 +33,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
     
     # Routes that don't require authentication
     PUBLIC_ROUTES = [
-        r'^/auth/google/login$',  # Google OAuth2 login initiation
-        r'^/auth/google/callback.*',  # Google OAuth2 callback with query params
-        r'^/auth/request-otp$',  # OTP request endpoint
-        r'^/auth/verify-otp$',  # OTP verification endpoint
-        r'^/auth/refresh-token$',  # Refresh token endpoint
-        r'^/auth/logout$',  # Logout endpoint (doesn't require auth, just refresh token)
+        r'^/auth/google/login$',
+        r'^/auth/google/callback.*',
+        r'^/auth/request-otp$',
+        r'^/auth/verify-otp$',
+        r'^/auth/refresh-token$',
+        r'^/auth/logout$',
+        r'^/locations/.*',          # Countries and cities are public
         r'^/health$',
         r'^/docs.*',
         r'^/openapi.json$',
