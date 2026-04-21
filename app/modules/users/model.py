@@ -16,6 +16,7 @@ class User(Base):
 
     is_email_verified = Column(Boolean, default=False, nullable=False)
     is_phone_verified = Column(Boolean, default=False, nullable=False)
+    is_profile_completed = Column(Boolean, default=False, nullable=False)
 
     status = Column(String(20), default="active", nullable=False)  # active, inactive, suspended
 

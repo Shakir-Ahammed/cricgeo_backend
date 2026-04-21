@@ -14,6 +14,7 @@ class UserOut(BaseModel):
     phone: Optional[str] = None
     is_email_verified: bool
     is_phone_verified: bool
+    is_profile_completed: bool = False
     status: str
     last_login_at: Optional[datetime] = None
     created_at: datetime

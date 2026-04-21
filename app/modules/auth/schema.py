@@ -71,6 +71,7 @@ class VerifyOTPResponse(BaseModel):
     access_token: str
     refresh_token: str
     is_new_user: bool
+    is_profile_completed: bool = False
     token_type: str = "bearer"
     expires_in: int
 

@@ -104,14 +104,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # Extract user data from token
         user_id = payload.get("user_id")
         email = payload.get("email")
-        
-        if not user_id or not email:
+
+        if not user_id:
             return self._unauthorized_response("Invalid token payload")
-        
+
         # Attach user data to request state
         request.state.user = {
             "id": user_id,
-            "email": email
+            "email": email,
         }
         
         # Continue to next handler

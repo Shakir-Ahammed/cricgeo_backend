@@ -77,6 +77,16 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     GOOGLE_REDIRECT_URI: str = "http://localhost:8000/auth/google/callback"
+
+    # Cloudflare R2 Object Storage
+    # Endpoint: https://<account_id>.r2.cloudflarestorage.com
+    STORAGE_ENDPOINT: str = "https://0aa57640242268baadff5c1238805c95.r2.cloudflarestorage.com"
+    STORAGE_BUCKET: str = "cricgeo"
+    STORAGE_ACCESS_KEY_ID: str = "b3308ac3a7b1c2a03b5e6e70925925f7"
+    STORAGE_SECRET_ACCESS_KEY: str = "d0ec507691349507f589bb6ef9586de8ff9730381a8266dc1e81f8a49c86cde3"
+    # Public URL base — set this to your custom domain or R2.dev public URL
+    # e.g. https://pub-XXXX.r2.dev  OR  https://files.yourdomain.com
+    STORAGE_PUBLIC_URL: str = "https://0aa57640242268baadff5c1238805c95.r2.cloudflarestorage.com/cricgeo"
     
     class Config:
         env_file = ".env"

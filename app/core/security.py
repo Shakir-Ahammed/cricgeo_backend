@@ -202,15 +202,15 @@ async def get_current_user(
     # Extract user data from token
     user_id = payload.get("user_id")
     email = payload.get("email")
-    
-    if not user_id or not email:
+
+    if not user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     return {
         "id": user_id,
-        "email": email
+        "email": email,
     }

@@ -55,7 +55,11 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
-    lifespan=lifespan
+    lifespan=lifespan,
+    servers=[
+        {"url": "http://localhost:8000", "description": "Local development"},
+        {"url": "http://127.0.0.1:8000", "description": "Local development (IP)"},
+    ],
 )
 
 # Security scheme for Swagger UI

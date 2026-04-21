@@ -482,6 +482,7 @@ class AuthService:
             access_token=access_token,
             refresh_token=refresh_token,
             is_new_user=is_new_user,
+            is_profile_completed=bool(getattr(user, "is_profile_completed", False)),
             token_type="bearer",
             expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         )
