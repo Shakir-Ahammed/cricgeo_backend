@@ -238,6 +238,58 @@ class AuthService:
         )
         return authorization_url
 
+    async def google_verify_id_token(
+        self,
+        id_token_str: str,
+        ip: Optional[str] = None,
+        device: Optional[str] = None,
+    ) -> "AuthResponse":
+        """Verify a Google ID token issued by the mobile SDK and return JWT tokens."""
+        # Build list of all accepted audiences (web + Android + iOS client IDs)
+        allowed_audiences = [settings.GOOGLE_CLIENT_ID]
+        if settings.GOOGLE_ANDROID_CLIENT_ID:
+            allowed_audiences.append(settings.GOOGLE_ANDROID_CLIENT_ID)
+
+        idinfo = None
+        last_error: Optional[Exception] = None
+        for audience in allowed_audiences:
+            try:
+                idinfo = id_token.verify_oauth2_token(
+                    id_token_str,
+                    google_requests.Request(),
+                    audience,
+                )
+                break
+            except Exception as e:
+                last_error = e
+
+        if idinfo is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Invalid Google ID token: {last_error}",
+            )
+
+        google_user_id = idinfo.get("sub")
+        email = normalize_email(idinfo.get("email"))
+        name = idinfo.get("name")
+        email_verified = idinfo.get("email_verified", False)
+
+        if not email or not google_user_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to get user information from Google token",
+            )
+
+        user = await self._find_or_create_google_user(
+            email=email, name=name, google_user_id=google_user_id, email_verified=email_verified
+        )
+        user.last_login_at = datetime.utcnow()
+        await self.db.commit()
+        await self.db.refresh(user)
+
+        refresh_token, _ = await self._create_user_session(user.id, ip, device)
+        return AuthResponse(user=self._user_out(user), tokens=self._build_token_response(user, refresh_token))
+
     async def google_callback(
         self,
         code: str,

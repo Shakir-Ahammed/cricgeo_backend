@@ -35,6 +35,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
     PUBLIC_ROUTES = [
         r'^/auth/google/login$',
         r'^/auth/google/callback.*',
+        r'^/auth/google/token$',    # Mobile Google Sign-In
         r'^/auth/request-otp$',
         r'^/auth/verify-otp$',
         r'^/auth/refresh-token$',

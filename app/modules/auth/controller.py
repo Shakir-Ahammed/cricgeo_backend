@@ -12,6 +12,7 @@ from app.modules.auth.schema import (
     RequestOTPRequest,
     VerifyOTPRequest,
     CompleteProfileRequest,
+    GoogleTokenRequest,
 )
 
 
@@ -193,4 +194,24 @@ class AuthController:
             "success": True,
             "message": message,
             "data": None
+        }
+
+    @staticmethod
+    async def google_token_login(
+        request_body: "GoogleTokenRequest",
+        req: Request,
+        db: AsyncSession = Depends(get_db)
+    ) -> Dict[str, Any]:
+        """
+        Verify Google ID token from mobile SDK and return JWT tokens.
+        """
+        service = AuthService(db)
+        ip = req.client.host if req.client else None
+        device = req.headers.get("User-Agent")
+
+        auth_response = await service.google_verify_id_token(request_body.id_token, ip, device)
+        return {
+            "success": True,
+            "message": "Google login successful",
+            "data": auth_response.model_dump(),
         }

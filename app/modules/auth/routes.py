@@ -11,7 +11,7 @@ from app.core.db import get_db
 from app.core.security import get_current_user
 from app.modules.auth.controller import AuthController
 from app.modules.auth.schema import (
-    RequestOTPRequest, VerifyOTPRequest, CompleteProfileRequest, RefreshTokenRequest
+    RequestOTPRequest, VerifyOTPRequest, CompleteProfileRequest, RefreshTokenRequest, GoogleTokenRequest
 )
 
 router = APIRouter(
@@ -49,6 +49,19 @@ async def google_callback(
         return RedirectResponse(url=redirect_url, status_code=302)
     return response
 
+
+@router.post("/google/token", response_model=Dict[str, Any])
+async def google_token_login(
+    request_body: GoogleTokenRequest,
+    req: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Mobile Google Sign-In endpoint.
+    The mobile app uses the Google Sign-In SDK to obtain an id_token,
+    then POSTs it here to receive access_token + refresh_token.
+    """
+    return await AuthController.google_token_login(request_body, req, db)
 
 
 # ============================================================================

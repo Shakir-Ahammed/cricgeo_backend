@@ -74,9 +74,11 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://127.0.0.1:8000/"
     
     # Google OAuth2 Configuration
-    GOOGLE_CLIENT_ID: str = ""
-    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_CLIENT_ID: str = "1008567724778-bqi9vv207211ctogf213mm5uo3gnhk5r.apps.googleusercontent.com"
+    GOOGLE_CLIENT_SECRET: str = "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"
     GOOGLE_REDIRECT_URI: str = "http://localhost:8000/auth/google/callback"
+    # Mobile client IDs — set these to allow id_token verification from Android/iOS apps
+    GOOGLE_ANDROID_CLIENT_ID: str = "1008567724778-7tll0fkhhs4as3lmf0rgmuvd10df80lq.apps.googleusercontent.com"
 
     # Cloudflare R2 Object Storage
     # Endpoint: https://<account_id>.r2.cloudflarestorage.com

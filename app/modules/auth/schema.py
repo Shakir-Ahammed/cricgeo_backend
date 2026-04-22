@@ -91,6 +91,5 @@ class CompleteProfileResponse(BaseModel):
     user: UserOut
 
 
-class CompleteProfileResponse(BaseModel):
-    message: str
-    user: UserOut
+class GoogleTokenRequest(BaseModel):
+    id_token: str = Field(..., description="Google ID token obtained from the mobile Google Sign-In SDK")
