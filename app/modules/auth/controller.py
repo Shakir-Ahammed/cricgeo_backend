@@ -13,6 +13,7 @@ from app.modules.auth.schema import (
     VerifyOTPRequest,
     CompleteProfileRequest,
     GoogleTokenRequest,
+    RefreshTokenRequest,
 )
 
 
