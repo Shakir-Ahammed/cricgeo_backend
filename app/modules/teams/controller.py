@@ -49,6 +49,25 @@ async def create_team(
     }
 
 
+async def upload_team_logo(
+    db: AsyncSession,
+    team_id: int,
+    current_user_id: int,
+    contents: bytes,
+    filename: str,
+) -> Dict[str, Any]:
+    """Upload team logo to R2 and save URL to teams.logo."""
+    from app.core.storage import upload_team_logo as _upload
+    public_url = _upload(contents, filename, team_id)
+    team = await service.save_team_logo(db, team_id=team_id, requester_id=current_user_id, url=public_url)
+    await db.commit()
+    return {
+        "success": True,
+        "message": "Team logo uploaded successfully",
+        "data": {"url": public_url, "team_id": team.id},
+    }
+
+
 async def get_my_teams(
     db: AsyncSession,
     current_user_id: int,

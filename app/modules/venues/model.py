@@ -33,6 +33,7 @@ class Venue(Base):
     latitude = Column(Numeric(9, 6), nullable=True)
     longitude = Column(Numeric(9, 6), nullable=True)
 
+    photo = Column(String(500), nullable=True)       # R2 public URL
     is_public = Column(Boolean, nullable=False, default=True)
     status = Column(String(20), nullable=False, default="active")
 

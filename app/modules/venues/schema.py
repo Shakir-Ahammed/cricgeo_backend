@@ -38,6 +38,7 @@ class VenueResponse(BaseModel):
     latitude: Optional[Decimal] = None
     longitude: Optional[Decimal] = None
     created_by: int
+    photo: Optional[str] = None
     is_public: bool
     status: str
     created_at: datetime

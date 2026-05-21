@@ -23,6 +23,24 @@ _ACTIVE = "active"
 _CAPTAIN = "captain"
 
 
+async def save_team_logo(db: AsyncSession, team_id: int, requester_id: int, url: str) -> Team:
+    """
+    Persist a new logo URL on a team.
+    Only the team owner or captain may update the logo.
+    """
+    await _require_captain_or_owner(db, team_id, requester_id)
+    result = await db.execute(
+        select(Team).where(Team.id == team_id, Team.deleted_at.is_(None))
+    )
+    team = result.scalar_one_or_none()
+    if team is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+    team.logo = url
+    db.add(team)
+    await db.flush()
+    return team
+
+
 async def _get_team_or_404(db: AsyncSession, team_id: int) -> Team:
     """Fetch a non-deleted team or raise 404."""
     result = await db.execute(

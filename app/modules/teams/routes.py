@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
@@ -140,6 +140,41 @@ async def join_team(
 # ---------------------------------------------------------------------------
 # Parameterised team routes  /{id}
 # ---------------------------------------------------------------------------
+
+
+@router.post("/{team_id}/logo", response_model=Dict[str, Any])
+async def upload_team_logo(
+    team_id: int,
+    request: Request,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Upload or replace the team logo (JPEG / PNG / WebP, max 5 MB).
+    Only the team owner or captain may upload.
+    Saves to Cloudflare R2 and updates teams.logo in the database.
+    """
+    from fastapi import HTTPException, status as http_status
+    _ALLOWED = {"image/jpeg", "image/png", "image/webp"}
+    _MAX_BYTES = 5 * 1024 * 1024  # 5 MB
+
+    current_user_id = _require_user_id(request)
+
+    if file.content_type not in _ALLOWED:
+        raise HTTPException(
+            status_code=http_status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Only JPEG, PNG, and WebP images are allowed",
+        )
+    contents = await file.read()
+    if len(contents) > _MAX_BYTES:
+        raise HTTPException(
+            status_code=http_status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Image must be 5 MB or smaller",
+        )
+    return await controller.upload_team_logo(
+        db, team_id=team_id, current_user_id=current_user_id,
+        contents=contents, filename=file.filename or "logo",
+    )
 
 
 @router.get("/{team_id}", response_model=Dict[str, Any])

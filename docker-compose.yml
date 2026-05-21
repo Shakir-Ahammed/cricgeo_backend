@@ -1,14 +1,40 @@
-# ============================================================================
-# DOCKER COMPOSE CONFIGURATION (POSTGRESQL-FIRST)
-# ============================================================================
-# CricGeo backend with optional local PostgreSQL and pgAdmin services.
-# Default DATABASE_URL points to external PostgreSQL using .env values.
-# ============================================================================
+# =============================================================================
+# CricGeo Backend — Docker Compose
+# Services: backend (FastAPI) + Redis
+# Database: Remote PostgreSQL at 132.145.103.103 (not managed by Docker)
+# =============================================================================
 
 services:
-  # ==========================================================================
-  # FASTAPI BACKEND SERVICE
-  # ==========================================================================
+
+  # ===========================================================================
+  # REDIS  (required — ARQ background jobs + caching)
+  # ===========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: cricgeo_redis
+    restart: unless-stopped
+
+    ports:
+      - "6379:6379"
+
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+    volumes:
+      - redis_data:/data
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+    networks:
+      - backend_network
+
+  # ===========================================================================
+  # FASTAPI BACKEND
+  # ===========================================================================
   backend:
     build:
       context: .
@@ -21,102 +47,84 @@ services:
       - "8000:8000"
 
     environment:
+      # ── Database (remote server — not managed by Docker) ──────────────────
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://cric_geo:Shuvo231@132.145.103.103:5432/cric_geo_db}
-      JWT_SECRET: ${JWT_SECRET:-change-this-in-production}
+
+      # ── Redis (service above) ─────────────────────────────────────────────
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+
+      # ── JWT ───────────────────────────────────────────────────────────────
+      JWT_SECRET: ${JWT_SECRET:-change-this-in-production-use-a-long-random-string}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
-      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-10080}
       REFRESH_TOKEN_EXPIRE_MINUTES: ${REFRESH_TOKEN_EXPIRE_MINUTES:-10080}
-      MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
+
+      # ── Email (Brevo/SMTP) ────────────────────────────────────────────────
+      MAIL_HOST: ${MAIL_HOST:-smtp-relay.brevo.com}
       MAIL_PORT: ${MAIL_PORT:-587}
-      MAIL_USERNAME: ${MAIL_USERNAME}
-      MAIL_PASSWORD: ${MAIL_PASSWORD}
+      MAIL_USERNAME: ${MAIL_USERNAME:-7809f9001@smtp-brevo.com}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-hmOGg9Ux0RqCNFMS}
       MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-noreply@cricgeo.app}
       MAIL_FROM_NAME: ${MAIL_FROM_NAME:-CricGeo}
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+
+      # ── Google OAuth2 ─────────────────────────────────────────────────────
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-1008567724778-bqi9vv207211ctogf213mm5uo3gnhk5r.apps.googleusercontent.com}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-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}
       GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:8000/auth/google/callback}
+      GOOGLE_ANDROID_CLIENT_ID: ${GOOGLE_ANDROID_CLIENT_ID:-1008567724778-7tll0fkhhs4as3lmf0rgmuvd10df80lq.apps.googleusercontent.com}
+
+      # ── Cloudflare R2 Storage ─────────────────────────────────────────────
+      # STORAGE_PUBLIC_URL: get from Cloudflare Dashboard → R2 → bucket
+      #   → Settings → Public access → Enable R2.dev subdomain
+      #   → format: https://pub-XXXX.r2.dev
+      STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:-https://0aa57640242268baadff5c1238805c95.r2.cloudflarestorage.com}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-cricgeo}
+      STORAGE_ACCESS_KEY_ID: ${STORAGE_ACCESS_KEY_ID:-b3308ac3a7b1c2a03b5e6e70925925f7}
+      STORAGE_SECRET_ACCESS_KEY: ${STORAGE_SECRET_ACCESS_KEY:-d0ec507691349507f589bb6ef9586de8ff9730381a8266dc1e81f8a49c86cde3}
+      STORAGE_PUBLIC_URL: ${STORAGE_PUBLIC_URL:-https://pub-bff31045f97f44059cf0244049dd779f.r2.dev}
+
+      # ── Bulk SMS ──────────────────────────────────────────────────────────
+      BULKSMS_API_KEY: ${BULKSMS_API_KEY:-dBG4rYOLWW28f3ip15yW}
+      BULKSMS_SENDER_ID: ${BULKSMS_SENDER_ID:-8809617624082}
+      BULKSMS_API_URL: ${BULKSMS_API_URL:-http://bulksmsbd.net/api/smsapi}
+
+      # ── App ───────────────────────────────────────────────────────────────
       APP_NAME: ${APP_NAME:-CricGeo Backend}
       APP_VERSION: ${APP_VERSION:-1.0.0}
       DEBUG: ${DEBUG:-False}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       WORKERS: ${WORKERS:-4}
 
+    volumes:
+      # Persist uploaded files across container restarts (fallback local storage)
+      - uploads_data:/app/uploads
+
+    depends_on:
+      redis:
+        condition: service_healthy
+
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
 
     networks:
       - backend_network
 
-  # ==========================================================================
-  # OPTIONAL: LOCAL POSTGRESQL SERVICE (DEV ONLY)
-  # ==========================================================================
-  postgres:
-    image: postgres:16-alpine
-    container_name: cricgeo_postgres
-    restart: unless-stopped
-
-    environment:
-      POSTGRES_DB: ${DB_NAME:-cric_geo_db}
-      POSTGRES_USER: ${DB_USER:-cric_geo}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-Shuvo231}
-
-    ports:
-      - "5432:5432"
-
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-cric_geo} -d ${DB_NAME:-cric_geo_db}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
-
-    networks:
-      - backend_network
-
-    profiles:
-      - local-db
-
-  # ==========================================================================
-  # OPTIONAL: PGADMIN (DATABASE MANAGEMENT)
-  # ==========================================================================
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: cricgeo_pgadmin
-    restart: unless-stopped
-
-    environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@cricgeo.app}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin123}
-
-    ports:
-      - "8080:80"
-
-    depends_on:
-      - postgres
-
-    networks:
-      - backend_network
-
-    profiles:
-      - tools
-
-# ==========================================================================
+# =============================================================================
 # NETWORKS
-# ==========================================================================
+# =============================================================================
 networks:
   backend_network:
     driver: bridge
 
-# ==========================================================================
+# =============================================================================
 # VOLUMES
-# ==========================================================================
+# =============================================================================
 volumes:
-  postgres_data:
+  redis_data:
+    driver: local
+  uploads_data:
     driver: local

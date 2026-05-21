@@ -70,7 +70,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Create non-root user for security
 # Running as non-root reduces security risks
 RUN useradd -m -u 1000 appuser && \
-    mkdir -p /app && \
+    mkdir -p /app/uploads/profiles && \
     chown -R appuser:appuser /app
 
 # Set working directory
@@ -86,6 +86,10 @@ COPY --chown=appuser:appuser app/ ./app/
 # Copy Alembic configuration and migrations
 COPY --chown=appuser:appuser alembic.ini ./
 COPY --chown=appuser:appuser migrations/ ./migrations/
+
+# Copy entrypoint script
+COPY --chown=appuser:appuser entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
 
 # Copy environment file (optional - can be mounted at runtime or passed as env vars)
 # For production, use Docker secrets or environment variables instead
@@ -133,16 +137,8 @@ HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=40s \
 # CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 #
 # For production with environment-based workers:
-CMD gunicorn app.main:app \
-    --workers ${WORKERS:-4} \
-    --worker-class ${WORKER_CLASS:-uvicorn.workers.UvicornWorker} \
-    --bind ${HOST:-0.0.0.0}:${PORT:-8000} \
-    --access-logfile - \
-    --error-logfile - \
-    --log-level info \
-    --timeout 120 \
-    --graceful-timeout 30 \
-    --keep-alive 5
+# entrypoint.sh: waits for DB → runs alembic upgrade head → starts gunicorn
+ENTRYPOINT ["./entrypoint.sh"]
 
 # ============================================================================
 # USAGE INSTRUCTIONS

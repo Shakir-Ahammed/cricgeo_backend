@@ -139,3 +139,33 @@ async def search_venues(
         "page": params.page,
         "per_page": params.per_page,
     }
+
+
+async def save_venue_photo(
+    db: AsyncSession,
+    venue_id: int,
+    requester_id: int,
+    url: str,
+) -> Venue:
+    """
+    Persist a new photo URL on a venue.
+    Only the venue creator may upload a photo.
+    """
+    from fastapi import HTTPException, status
+
+    result = await db.execute(
+        select(Venue).where(Venue.id == venue_id, Venue.status == "active")
+    )
+    venue = result.scalar_one_or_none()
+    if venue is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Venue not found")
+    if venue.created_by != requester_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the venue creator can upload a photo",
+        )
+    venue.photo = url
+    db.add(venue)
+    await db.commit()
+    await db.refresh(venue)
+    return venue
