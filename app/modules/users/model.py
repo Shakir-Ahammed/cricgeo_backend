@@ -1,5 +1,6 @@
 """
-User SQLAlchemy models: User and UserSubscription.
+User SQLAlchemy model.
+UserSubscription has moved to app.modules.subscriptions.model.
 """
 
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, func
@@ -28,23 +29,3 @@ class User(Base):
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email={self.email})>"
-
-
-class UserSubscription(Base):
-    __tablename__ = "user_subscriptions"
-
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-
-    plan_id = Column(Integer, nullable=True)  # FK to plans table (future)
-    status = Column(String(20), default="trial", nullable=False)  # active, trial, expired, cancelled
-
-    starts_at = Column(DateTime(timezone=True), nullable=True)
-    expires_at = Column(DateTime(timezone=True), nullable=True)
-    trial_ends_at = Column(DateTime(timezone=True), nullable=True)
-
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
-
-    def __repr__(self) -> str:
-        return f"<UserSubscription(id={self.id}, user_id={self.user_id}, status={self.status})>"

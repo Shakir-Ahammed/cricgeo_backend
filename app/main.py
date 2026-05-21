@@ -5,14 +5,16 @@ Main application entry point with route registration and middleware setup.
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse, HTMLResponse
-from fastapi.security import HTTPBearer
 from contextlib import asynccontextmanager
 import uvicorn
 
 # Core imports
 from app.core.config import settings
 from app.core.db import init_db, close_db
+from app.core.redis import init_redis, close_redis
+from app.core.jobs import init_arq, close_arq
 
 # Middleware imports
 from app.middlewares.auth_middleware import AuthMiddleware
@@ -22,6 +24,8 @@ from app.modules.auth.routes import router as auth_router
 from app.modules.users.routes import router as users_router
 from app.modules.profiles.routes import router as profiles_router
 from app.modules.locations.routes import router as locations_router
+from app.modules.venues.routes import router as venues_router
+from app.modules.subscriptions.routes import router as subscriptions_router
 
 
 @asynccontextmanager
@@ -38,11 +42,26 @@ async def lifespan(app: FastAPI):
     # Initialize database (uncomment if not using Alembic)
     # await init_db()
     print("✅ Database initialized")
+    try:
+        await init_redis()
+        print("✅ Redis connected")
+    except Exception as exc:
+        print(f"⚠️  Redis unavailable at startup ({exc}) — live caching degraded, falling back to DB reads")
+
+    try:
+        await init_arq()
+        print("✅ ARQ pool ready")
+    except Exception as exc:
+        print(f"⚠️  ARQ unavailable at startup ({exc}) — background jobs degraded")
     
     yield
     
     # Shutdown
     print("🛑 Shutting down FastAPI application...")
+    await close_arq()
+    print("✅ ARQ pool closed")
+    await close_redis()
+    print("✅ Redis connection closed")
     await close_db()
     print("✅ Database connections closed")
 
@@ -62,8 +81,35 @@ app = FastAPI(
     ],
 )
 
-# Security scheme for Swagger UI
-security = HTTPBearer()
+# ============================================================================
+# OPENAPI / SWAGGER SECURITY SCHEME
+# ============================================================================
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+        servers=app.servers,
+    )
+    schema.setdefault("components", {})
+    schema["components"]["securitySchemes"] = {
+        "BearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+        }
+    }
+    # Apply BearerAuth to every operation so Swagger sends the token
+    for path_item in schema.get("paths", {}).values():
+        for operation in path_item.values():
+            if isinstance(operation, dict):
+                operation["security"] = [{"BearerAuth": []}]
+    app.openapi_schema = schema
+    return app.openapi_schema
 
 
 # ============================================================================
@@ -224,6 +270,10 @@ app.include_router(auth_router)       # /auth/*
 app.include_router(users_router)      # /users/*
 app.include_router(profiles_router)   # /profiles/*
 app.include_router(locations_router)  # /locations/*
+app.include_router(venues_router)          # /venues/*
+app.include_router(subscriptions_router)   # /subscriptions/*
+
+app.openapi = custom_openapi  # inject BearerAuth into Swagger UI
 
 
 # ============================================================================

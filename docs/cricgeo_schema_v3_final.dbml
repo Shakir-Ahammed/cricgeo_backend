@@ -1,0 +1,966 @@
+// ============================================================
+// CRICGEO — DATABASE SCHEMA v3.0 FINAL
+// PostgreSQL | dbdiagram.io DBML
+// ============================================================
+//
+// v3 vs v2 — কী পরিবর্তন হয়েছে:
+//
+// [NEW TABLES — 8টি নতুন table]
+//   + venues              — Ground search + Add New Ground (UI Module 7.5)
+//   + match_officials     — Umpire/Scorer/Commentator/Referee assign (UI Module 7.6)
+//   + match_powerplays    — PowerPlay 1/2/3 config (UI Module 7.3)
+//   + match_invitations   — QR join / share link / SMS invite (UI Module 9)
+//   + notifications       — In-app notification system (Module 13)
+//   + push_tokens         — FCM/APNs device tokens
+//   + subscription_plans  — user_subscriptions.plan_id এর reference table (ছিলই না)
+//   + obs_stream_tokens   — OBS overlay URL per match (Module 12)
+//
+// [MODIFIED TABLES — বিদ্যমান table এ নতুন column]
+//   profiles              + username (UI তে mandatory — ছিল না)
+//   user_auth_providers   + provider_email
+//   user_sessions         + platform (ios/android/web)
+//   teams                 ~ type enum: corporate/tournament যোগ হয়েছে
+//   team_invitations      + invite_method, token, invitee_name
+//   tournaments           + venue_id (venue ছিল varchar, এখন FK)
+//   matches               + venue_id, overs_per_bowler, match_type,
+//                           visibility, created_by
+//                         ~ format enum: the_hundred, pair_cricket, box_turf যোগ
+//                         ~ status enum: cancelled যোগ
+//   countries             + flag_emoji
+//
+// [OPTIMIZATION]
+//   — Partial indexes: status columns এ (WHERE status = 'live' etc)
+//   — Covering indexes: hot read path এ
+//   — match_live_state: single row per match, Redis cache recommend
+//   — player_career_stats: background job update, O(1) read
+//   — lower(username) unique index: case-insensitive username
+//   — balls_bowled int only (no decimal overs anywhere)
+//   — Computed stats (average, economy, CRR, RRR) application layer এ
+//   — Soft delete: users, teams, tournaments, matches only
+//   — Optimistic locking: batting_scorecards, bowling_scorecards (version col)
+//
+// ============================================================
+
+
+// ============================================================
+// LAYER 1 — LOCATION
+// ============================================================
+
+Table countries {
+  id            int          [pk, increment]
+  name          varchar(100) [not null]
+  iso2          varchar(2)   [unique, not null, note: "BD, IN, US"]
+  iso3          varchar(3)   [unique, not null, note: "BGD, IND, USA"]
+  phone_code    varchar(10)  [note: "+880"]
+  flag_emoji    varchar(10)  [note: "🇧🇩 — UI country list এ দেখাবে"]
+  created_at    timestamptz  [default: `now()`]
+}
+
+Table cities {
+  id          int           [pk, increment]
+  country_id  int           [not null, ref: > countries.id]
+  name        varchar(100)  [not null]
+  state       varchar(100)  [note: "District/Division — Rajshahi Division"]
+  latitude    decimal(9,6)
+  longitude   decimal(9,6)
+  created_at  timestamptz   [default: `now()`]
+
+  indexes {
+    (country_id)
+  }
+}
+
+// ─── NEW ────────────────────────────────────────────────────
+// Match create এ Ground search + Add New Ground (Module 7.5)
+Table venues {
+  id          int           [pk, increment]
+  name        varchar(150)  [not null, note: "Rajshahi Court Ground"]
+  address     text          [note: "Full address — Module 7.5: Full Address field"]
+  city_id     int           [ref: > cities.id]
+  country_id  int           [ref: > countries.id]
+  latitude    decimal(9,6)  [note: "Nearby ground search এর জন্য"]
+  longitude   decimal(9,6)
+  created_by  int           [not null, ref: > users.id]
+  is_public   boolean       [not null, default: true, note: "false = শুধু creator দেখবে"]
+  status      varchar(20)   [not null, default: 'active', note: "active, inactive"]
+  created_at  timestamptz   [default: `now()`]
+  updated_at  timestamptz
+
+  indexes {
+    (city_id)
+    (created_by)
+    (latitude, longitude) [note: "Haversine / PostGIS nearby search"]
+  }
+}
+
+
+// ============================================================
+// LAYER 2 — USER & AUTH
+// ============================================================
+
+// Login system already built — column names হুবহু same রাখা হয়েছে
+Table users {
+  id                  int          [pk, increment]
+  name                varchar(150) [not null]
+  email               varchar(255) [unique, note: "nullable — phone অথবা email যেকোনো একটি থাকলেই হবে"]
+  phone               varchar(20)  [unique, note: "nullable — E.164: +8801XXXXXXXXX"]
+  is_email_verified   boolean      [not null, default: false]
+  is_phone_verified   boolean      [not null, default: false]
+  status              varchar(20)  [not null, default: 'active', note: "active, inactive, suspended"]
+  last_login_at       timestamptz
+  created_at          timestamptz  [default: `now()`]
+  updated_at          timestamptz
+  deleted_at          timestamptz  [note: "soft delete"]
+
+  indexes {
+    (email) [note: "partial: WHERE email IS NOT NULL"]
+    (phone) [note: "partial: WHERE phone IS NOT NULL"]
+    (status) [note: "partial: WHERE status = 'suspended' — ban check"]
+  }
+}
+
+Table user_auth_providers {
+  id                int          [pk, increment]
+  user_id           int          [not null, ref: > users.id]
+  provider          varchar(30)  [not null, note: "google, apple, facebook"]
+  provider_user_id  varchar(255) [not null, note: "Google sub ID"]
+  provider_email    varchar(255) [note: "Provider থেকে পাওয়া email — Google login এ useful"]
+  created_at        timestamptz  [default: `now()`]
+
+  indexes {
+    (provider, provider_user_id) [unique]
+    (user_id)
+  }
+}
+
+Table user_sessions {
+  id                  int          [pk, increment]
+  user_id             int          [not null, ref: > users.id]
+  refresh_token_hash  varchar(255) [not null]
+  device_info         varchar(255) [note: "device model info"]
+  platform            varchar(10)  [note: "ios, android, web"]
+  ip_address          varchar(45)  [note: "IPv4/IPv6"]
+  is_revoked          boolean      [not null, default: false]
+  expires_at          timestamptz  [not null]
+  revoked_at          timestamptz
+  created_at          timestamptz  [default: `now()`]
+  updated_at          timestamptz
+
+  indexes {
+    (user_id)
+    (refresh_token_hash)
+    (user_id, is_revoked) [note: "partial: WHERE is_revoked = false — active sessions"]
+  }
+}
+
+Table otps {
+  id          int          [pk, increment]
+  user_id     int          [ref: > users.id, note: "nullable — new user এ null"]
+  identifier  varchar(255) [not null, note: "email অথবা phone"]
+  code_hash   varchar(255) [not null, note: "bcrypt hash — plain OTP কখনো store না"]
+  type        varchar(20)  [not null, note: "login, signup, reset"]
+  expires_at  timestamptz  [not null, note: "5 মিনিট"]
+  attempts    int          [not null, default: 0, note: "max 5 attempts — তারপর block"]
+  is_used     boolean      [not null, default: false]
+  created_at  timestamptz  [default: `now()`]
+
+  indexes {
+    (identifier, is_used) [note: "partial: WHERE is_used = false AND expires_at > now()"]
+  }
+}
+
+// ─── NEW ────────────────────────────────────────────────────
+// user_subscriptions.plan_id এর reference — v2 তে এই table ছিলই না
+Table subscription_plans {
+  id                      int           [pk, increment]
+  name                    varchar(100)  [not null, note: "Free, Pro, Team, Enterprise"]
+  slug                    varchar(50)   [unique, not null, note: "free, pro, team"]
+  price_monthly           decimal(10,2) [not null, default: 0]
+  price_yearly            decimal(10,2) [not null, default: 0]
+  currency                varchar(3)    [not null, default: 'BDT', note: "BDT, USD"]
+  features                jsonb         [note: "feature flags as JSON object"]
+  max_matches_per_month   int           [note: "null = unlimited"]
+  max_teams               int           [note: "null = unlimited"]
+  is_active               boolean       [not null, default: true]
+  created_at              timestamptz   [default: `now()`]
+}
+
+Table user_subscriptions {
+  id              int          [pk, increment]
+  user_id         int          [not null, ref: > users.id]
+  plan_id         int          [not null, ref: > subscription_plans.id]
+  status          varchar(20)  [not null, note: "active, trial, expired, cancelled"]
+  starts_at       timestamptz
+  expires_at      timestamptz
+  trial_ends_at   timestamptz
+  created_at      timestamptz  [default: `now()`]
+  updated_at      timestamptz
+
+  indexes {
+    (user_id, status) [note: "partial: WHERE status = 'active'"]
+  }
+}
+
+
+// ============================================================
+// LAYER 3 — PLAYER PROFILE
+// ============================================================
+
+// username column — Module 2 Profile Setup এ mandatory field ছিল, v2 তে missing
+Table profiles {
+  id              int          [pk, increment]
+  user_id         int          [unique, not null, ref: > users.id]
+  username        varchar(50)  [unique, note: "Unique handle @rasel — lower(username) unique index"]
+  country_id      int          [ref: > countries.id]
+  city_id         int          [ref: > cities.id]
+  gender          smallint     [note: "1=male, 2=female, 3=other"]
+  date_of_birth   date
+  profile_image   varchar(500) [note: "CDN URL — S3 / Cloudflare R2"]
+  bio             text
+  created_at      timestamptz  [default: `now()`]
+  updated_at      timestamptz
+
+  indexes {
+    (username) [unique, note: "CREATE UNIQUE INDEX ON profiles (lower(username)) WHERE username IS NOT NULL"]
+  }
+}
+
+// Player Role — Module 2.2 Professional Setup
+// Conditional fields: Batsman → batting_style; Bowler → bowling_arm + bowling_type; etc.
+Table player_roles {
+  id      int  [pk, increment]
+  user_id int  [not null, ref: > users.id]
+  role    int  [not null, note: "1=batsman, 2=bowler, 3=wicketkeeper, 4=allrounder"]
+  created_at  timestamptz  [default: `now()`]
+
+  indexes {
+    (user_id, role) [unique]
+  }
+}
+
+// Batsman / AllRounder / Wicketkeeper এর batting info — Module 2.2
+Table batting_infos {
+  id                  int        [pk, increment]
+  user_id             int        [unique, not null, ref: > users.id]
+  batting_style       smallint   [note: "1=left-hand, 2=right-hand"]
+  preferred_position  smallint   [note: "1=opener, 2=middle-order, 3=finisher — Module 2.2 Batsman conditional"]
+  created_at          timestamptz [default: `now()`]
+}
+
+// Bowler / AllRounder এর bowling info — Module 2.2
+Table bowling_infos {
+  id               int        [pk, increment]
+  user_id          int        [unique, not null, ref: > users.id]
+  bowling_style    smallint   [note: "1=pace, 2=spin — Module 2.2 Bowling Style"]
+  bowling_arm      smallint   [note: "1=right-arm, 2=left-arm — Module 2.2 Bowling Arm"]
+  bowling_type     smallint   [note: "1=fast, 2=medium-fast, 3=off-spin, 4=leg-spin — Module 2.2 Bowling Type (optional)"]
+  created_at       timestamptz [default: `now()`]
+}
+
+// Wicketkeeper extra info — Module 2.2
+Table keeping_infos {
+  id            int       [pk, increment]
+  user_id       int       [unique, not null, ref: > users.id]
+  keeping_skill smallint  [note: "1=primary-keeper, 2=occasional-keeper — Module 2.2 optional"]
+  created_at    timestamptz [default: `now()`]
+}
+
+// Career stats aggregate — match complete হলে background job এ update
+// O(1) read — real-time SUM query avoid করে high traffic তে
+Table player_career_stats {
+  user_id int [pk, ref: > users.id, note: "one row per player"]
+
+  // General
+  total_matches      int [not null, default: 0, note: "all matches (bat + bowl + field)"]
+  total_matches_won  int [not null, default: 0]
+
+  // Batting
+  total_matches_batted  int [not null, default: 0]
+  total_runs            int [not null, default: 0]
+  total_balls_faced     int [not null, default: 0]
+  total_fours           int [not null, default: 0]
+  total_sixes           int [not null, default: 0]
+  highest_score         int [not null, default: 0]
+  total_fifties         int [not null, default: 0, note: "50-99 innings count"]
+  total_hundreds        int [not null, default: 0, note: "100+ innings count"]
+  total_not_outs        int [not null, default: 0]
+  // batting_average     = total_runs / (total_matches_batted - total_not_outs)
+  // batting_strike_rate = (total_runs / total_balls_faced) * 100
+  // → application layer calculate — DB তে store না
+
+  // Bowling
+  total_matches_bowled  int [not null, default: 0]
+  total_wickets         int [not null, default: 0]
+  total_balls_bowled    int [not null, default: 0]
+  total_runs_conceded   int [not null, default: 0]
+  total_maidens         int [not null, default: 0]
+  best_bowling_wickets  int [not null, default: 0, note: "best innings — wickets"]
+  best_bowling_runs     int [not null, default: 0, note: "best innings — runs conceded"]
+  five_wicket_hauls     int [not null, default: 0]
+  // economy              = (total_runs_conceded / total_balls_bowled) * 6
+  // bowling_average      = total_runs_conceded / total_wickets
+  // bowling_strike_rate  = total_balls_bowled / total_wickets
+
+  // Fielding
+  total_catches    int [not null, default: 0]
+  total_run_outs   int [not null, default: 0]
+  total_stumpings  int [not null, default: 0]
+
+  updated_at timestamptz [default: `now()`]
+}
+
+
+// ============================================================
+// LAYER 4 — TEAM
+// ============================================================
+
+Table teams {
+  id           int          [pk, increment]
+  owner_id     int          [not null, ref: > users.id, note: "creator = default captain"]
+  name         varchar(150) [not null]
+  short_name   varchar(10)  [note: "BD, CRG, FRB — 2-4 char"]
+  logo         varchar(500) [note: "CDN URL"]
+  type         varchar(30)  [not null, note: "local, club, corporate, tournament, district, national"]
+  country_id   int          [ref: > countries.id]
+  city_id      int          [ref: > cities.id]
+  description  text
+  status       varchar(20)  [not null, default: 'active', note: "active, inactive, disbanded"]
+  created_at   timestamptz  [default: `now()`]
+  updated_at   timestamptz
+  deleted_at   timestamptz  [note: "soft delete"]
+
+  indexes {
+    (owner_id)
+    (city_id) [note: "nearby teams search"]
+    (status)  [note: "partial: WHERE deleted_at IS NULL"]
+  }
+}
+
+Table team_members {
+  id             int          [pk, increment]
+  team_id        int          [not null, ref: > teams.id]
+  user_id        int          [not null, ref: > users.id]
+  role           varchar(30)  [not null, note: "captain, vice_captain, player, coach, manager"]
+  jersey_number  int
+  status         varchar(20)  [not null, default: 'active', note: "active, inactive, released"]
+  joined_at      timestamptz  [default: `now()`]
+  released_at    timestamptz
+  created_at     timestamptz  [default: `now()`]
+
+  indexes {
+    (team_id, user_id) [unique]
+    (user_id) [note: "user এর সব team"]
+    (team_id, role) [note: "captain lookup fast"]
+  }
+}
+
+Table team_invitations {
+  id                  int          [pk, increment]
+  team_id             int          [not null, ref: > teams.id]
+  invited_by          int          [not null, ref: > users.id]
+  invitee_user_id     int          [ref: > users.id, note: "nullable — existing user"]
+  invitee_identifier  varchar(255) [note: "nullable — email/phone for new user"]
+  invitee_name        varchar(150) [note: "nullable — app তে নেই এমন ব্যক্তির নাম"]
+  role                varchar(30)  [not null, note: "player, coach, manager"]
+  invite_method       varchar(30)  [not null, default: 'link', note: "link, qr, phone, email, whatsapp — Module 6.3"]
+  token               varchar(255) [unique, note: "QR/link join এর unique token"]
+  status              varchar(20)  [not null, default: 'pending', note: "pending, accepted, declined, expired"]
+  expires_at          timestamptz  [not null]
+  responded_at        timestamptz
+  created_at          timestamptz  [default: `now()`]
+
+  indexes {
+    (token) [unique, note: "QR scan fast lookup"]
+    (invitee_user_id) [note: "partial: WHERE status = 'pending'"]
+    (team_id, status)
+  }
+}
+
+
+// ============================================================
+// LAYER 5 — TOURNAMENT
+// ============================================================
+
+Table tournaments {
+  id                       int           [pk, increment]
+  organizer_id             int           [not null, ref: > users.id]
+  name                     varchar(200)  [not null]
+  short_name               varchar(20)
+  logo                     varchar(500)
+  banner                   varchar(500)
+  description              text
+  format                   varchar(30)   [not null, note: "t20, odi, test, custom"]
+  overs_per_innings        int           [note: "nullable — test এ null"]
+  structure                varchar(30)   [not null, note: "round_robin, group_knockout, single_elimination, double_elimination"]
+  number_of_groups         int
+  teams_per_group          int
+  qualify_per_group        int
+  win_points               int           [not null, default: 2]
+  tie_points               int           [not null, default: 1]
+  loss_points              int           [not null, default: 0]
+  no_result_points         int           [not null, default: 1]
+  tiebreaker               varchar(30)   [not null, default: 'nrr', note: "nrr, head_to_head, coin_toss"]
+  country_id               int           [ref: > countries.id]
+  city_id                  int           [ref: > cities.id]
+  venue_id                 int           [ref: > venues.id, note: "nullable — tournament venue (varchar ছিল, এখন FK)"]
+  prize_pool               decimal(12,2)
+  prize_currency           varchar(3)    [note: "BDT, USD"]
+  status                   varchar(30)   [not null, default: 'draft', note: "draft, registration_open, upcoming, ongoing, completed, cancelled"]
+  registration_opens_at    timestamptz
+  registration_closes_at   timestamptz
+  starts_at                timestamptz
+  ends_at                  timestamptz
+  created_at               timestamptz   [default: `now()`]
+  updated_at               timestamptz
+  deleted_at               timestamptz   [note: "soft delete"]
+
+  indexes {
+    (status)        [note: "partial: WHERE deleted_at IS NULL AND status IN ('ongoing','upcoming')"]
+    (organizer_id)
+  }
+}
+
+Table tournament_teams {
+  id             int           [pk, increment]
+  tournament_id  int           [not null, ref: > tournaments.id]
+  team_id        int           [not null, ref: > teams.id]
+  group_name     varchar(20)   [note: "Group A, Group B"]
+  seed           int           [note: "seeding position"]
+  status         varchar(30)   [not null, default: 'registered', note: "registered, confirmed, eliminated, qualified, withdrew"]
+  played         int           [not null, default: 0]
+  won            int           [not null, default: 0]
+  lost           int           [not null, default: 0]
+  tied           int           [not null, default: 0]
+  no_result      int           [not null, default: 0]
+  points         int           [not null, default: 0]
+  nrr            decimal(6,3)  [not null, default: 0, note: "Net Run Rate"]
+  registered_at  timestamptz   [default: `now()`]
+  created_at     timestamptz   [default: `now()`]
+  updated_at     timestamptz
+
+  indexes {
+    (tournament_id, team_id) [unique]
+    (tournament_id, points)  [note: "points table sort — DESC"]
+  }
+}
+
+Table tournament_rounds {
+  id             int          [pk, increment]
+  tournament_id  int          [not null, ref: > tournaments.id]
+  name           varchar(100) [not null, note: "Group Stage, Quarter Final"]
+  round_type     varchar(30)  [not null, note: "group, round_of_16, quarter_final, semi_final, final, playoff, third_place"]
+  round_number   int          [not null, note: "sequence order"]
+  status         varchar(20)  [not null, default: 'upcoming', note: "upcoming, ongoing, completed"]
+  starts_at      timestamptz
+  ends_at        timestamptz
+  created_at     timestamptz  [default: `now()`]
+}
+
+// Instant leaderboard — background job update, no heavy SUM query
+Table tournament_player_stats {
+  id             int  [pk, increment]
+  tournament_id  int  [not null, ref: > tournaments.id]
+  user_id        int  [not null, ref: > users.id]
+  team_id        int  [not null, ref: > teams.id]
+
+  matches_played int [not null, default: 0]
+
+  // Batting
+  runs                  int [not null, default: 0]
+  balls_faced           int [not null, default: 0]
+  fours                 int [not null, default: 0]
+  sixes                 int [not null, default: 0]
+  highest_score         int [not null, default: 0]
+  fifties               int [not null, default: 0]
+  hundreds              int [not null, default: 0]
+  // batting_average, strike_rate → application calculate
+
+  // Bowling
+  wickets               int [not null, default: 0]
+  balls_bowled          int [not null, default: 0]
+  runs_conceded         int [not null, default: 0]
+  maidens               int [not null, default: 0]
+  best_bowling_wickets  int [not null, default: 0]
+  best_bowling_runs     int [not null, default: 0]
+  // economy, bowling_average → application calculate
+
+  // Fielding
+  catches    int [not null, default: 0]
+  run_outs   int [not null, default: 0]
+  stumpings  int [not null, default: 0]
+
+  updated_at timestamptz [default: `now()`]
+
+  indexes {
+    (tournament_id, user_id) [unique]
+    (tournament_id, runs)    [note: "top batsman leaderboard — DESC"]
+    (tournament_id, wickets) [note: "top bowler leaderboard — DESC"]
+  }
+}
+
+
+// ============================================================
+// LAYER 6 — MATCH
+// ============================================================
+
+Table matches {
+  id                    int          [pk, increment]
+  tournament_id         int          [ref: > tournaments.id, note: "nullable — friendly match এ null"]
+  round_id              int          [ref: > tournament_rounds.id, note: "nullable"]
+  team_a_id             int          [not null, ref: > teams.id]
+  team_b_id             int          [not null, ref: > teams.id, note: "CHECK: team_a_id != team_b_id"]
+  venue_id              int          [ref: > venues.id, note: "nullable — selected ground"]
+  venue_name            varchar(200) [note: "nullable — custom text input হলে এখানে"]
+  format                varchar(30)  [not null, note: "limited_overs, test, the_hundred, pair_cricket, box_turf, custom"]
+  overs_per_innings     int          [not null, note: "total overs — Module 7.2"]
+  overs_per_bowler      int          [note: "nullable — max overs per bowler — Module 7.2 Over Per Bowler"]
+  match_type            varchar(20)  [not null, default: 'friendly', note: "friendly, tournament, practice — Module 7.2 Match Type"]
+  visibility            varchar(20)  [not null, default: 'public', note: "public, private — Module 7.2 Match Privacy"]
+  toss_winner_team_id   int          [ref: > teams.id, note: "nullable"]
+  toss_decision         varchar(10)  [note: "nullable — bat, field"]
+  status                varchar(30)  [not null, default: 'scheduled', note: "scheduled, toss_done, live, innings_break, completed, abandoned, no_result, postponed, cancelled"]
+  winner_team_id        int          [ref: > teams.id, note: "nullable"]
+  result_type           varchar(20)  [note: "nullable — runs, wickets, tie, no_result, dls, super_over"]
+  result_margin         int          [note: "nullable — winning margin"]
+  dls_applied           boolean      [not null, default: false]
+  dls_target            int          [note: "nullable — DLS revised target"]
+  man_of_the_match_id   int          [ref: > users.id, note: "nullable"]
+  created_by            int          [not null, ref: > users.id, note: "match organizer / owner"]
+  scheduled_at          timestamptz
+  started_at            timestamptz
+  ended_at              timestamptz
+  created_at            timestamptz  [default: `now()`]
+  updated_at            timestamptz
+  deleted_at            timestamptz  [note: "soft delete"]
+
+  indexes {
+    (status)                [note: "PARTIAL INDEX: WHERE status IN ('live','scheduled') AND deleted_at IS NULL"]
+    (tournament_id, status) [note: "tournament match list"]
+    (team_a_id)
+    (team_b_id)
+    (created_by)            [note: "My Match screen — created matches"]
+    (visibility, status)    [note: "Explore screen — public live/upcoming matches"]
+  }
+}
+
+// CONSTRAINT — Migration এ add করতে হবে:
+// ALTER TABLE matches ADD CONSTRAINT chk_different_teams
+//   CHECK (team_a_id != team_b_id);
+
+// ─── NEW ────────────────────────────────────────────────────
+// Module 7.3 — PowerPlay 1/2/3 configuration
+Table match_powerplays {
+  id                     int   [pk, increment]
+  match_id               int   [not null, ref: > matches.id]
+  pp_number              int   [not null, note: "1, 2, 3"]
+  from_over              int   [not null, note: "শুরুর over — 1-based"]
+  to_over                int   [not null, note: "শেষ over — inclusive"]
+  fielding_restrictions  text  [note: "nullable — custom restriction notes"]
+  created_at             timestamptz [default: `now()`]
+
+  indexes {
+    (match_id, pp_number) [unique]
+  }
+}
+// CONSTRAINT: from_over < to_over
+
+// ─── NEW ────────────────────────────────────────────────────
+// Module 7.6 / 7.7 — Umpire, Scorer, Commentator, Referee, Live Streamer
+// App user না হলেও guest হিসেবে add করা যাবে (guest_name + guest_phone)
+Table match_officials {
+  id            int          [pk, increment]
+  match_id      int          [not null, ref: > matches.id]
+  user_id       int          [ref: > users.id, note: "nullable — registered app user হলে"]
+  guest_name    varchar(150) [note: "nullable — app user না হলে Official Name (Module 7.7)"]
+  guest_phone   varchar(20)  [note: "nullable — app user না হলে Mobile Number (Module 7.7)"]
+  role          varchar(30)  [not null, note: "umpire, scorer, commentator, referee, live_streamer"]
+  position      smallint     [note: "nullable — 1st/2nd/3rd/4th position"]
+  status        varchar(20)  [not null, default: 'invited', note: "invited, confirmed, declined"]
+  created_at    timestamptz  [default: `now()`]
+
+  indexes {
+    (match_id, role, position) [unique]
+    (user_id) [note: "user কোন কোন match এ official"]
+  }
+}
+// CONSTRAINT: user_id IS NOT NULL OR guest_name IS NOT NULL
+
+// ─── NEW ────────────────────────────────────────────────────
+// Module 9 — QR join, Share Link, SMS invite, Team invite
+Table match_invitations {
+  id                  int          [pk, increment]
+  match_id            int          [not null, ref: > matches.id]
+  invited_by          int          [not null, ref: > users.id]
+  invitee_user_id     int          [ref: > users.id, note: "nullable — registered user"]
+  invitee_identifier  varchar(255) [note: "nullable — email/phone for new user"]
+  invite_method       varchar(20)  [not null, note: "qr, link, sms, team — Module 9.1"]
+  token               varchar(255) [unique, not null, note: "unique join token — QR/link এ embed"]
+  role                varchar(20)  [default: 'viewer', note: "player, scorer, viewer, official"]
+  status              varchar(20)  [not null, default: 'pending', note: "pending, accepted, declined, expired"]
+  expires_at          timestamptz  [not null]
+  responded_at        timestamptz
+  created_at          timestamptz  [default: `now()`]
+
+  indexes {
+    (token)             [unique, note: "QR scan এ O(1) lookup"]
+    (match_id)
+    (invitee_user_id)   [note: "partial: WHERE status = 'pending'"]
+  }
+}
+
+Table match_players {
+  id               int      [pk, increment]
+  match_id         int      [not null, ref: > matches.id]
+  team_id          int      [not null, ref: > teams.id]
+  user_id          int      [not null, ref: > users.id]
+  batting_order    int      [note: "nullable — 1-11"]
+  is_playing_xi    boolean  [not null, default: true]
+  is_captain       boolean  [not null, default: false]
+  is_wicketkeeper  boolean  [not null, default: false]
+  is_substitute    boolean  [not null, default: false, note: "impact sub — Module 6.6"]
+  created_at       timestamptz [default: `now()`]
+
+  indexes {
+    (match_id, user_id) [unique]
+    (match_id, team_id)
+  }
+}
+
+Table match_innings {
+  id               int  [pk, increment]
+  match_id         int  [not null, ref: > matches.id]
+  batting_team_id  int  [not null, ref: > teams.id]
+  bowling_team_id  int  [not null, ref: > teams.id]
+  innings_number   int  [not null, note: "1 or 2 — test এ 1-4"]
+  total_runs       int  [not null, default: 0]
+  wickets          int  [not null, default: 0]
+  balls_bowled     int  [not null, default: 0, note: "int only — display: floor(b/6) + '.' + (b%6)  e.g. 117 → 19.3"]
+  extras           int  [not null, default: 0]
+  wide_balls       int  [not null, default: 0]
+  no_balls         int  [not null, default: 0]
+  byes             int  [not null, default: 0]
+  leg_byes         int  [not null, default: 0]
+  penalty_runs     int  [not null, default: 0]
+  target_runs      int  [note: "nullable — 2nd innings এ set"]
+  // CRR = total_runs / (balls_bowled / 6)
+  // RRR = (target_runs - total_runs) / ((overs_per_innings*6 - balls_bowled) / 6)
+  // → দুটোই application layer এ calculate — DB তে store না
+  status           varchar(20)  [not null, default: 'upcoming', note: "upcoming, live, completed"]
+  started_at       timestamptz
+  ended_at         timestamptz
+  created_at       timestamptz  [default: `now()`]
+  updated_at       timestamptz
+
+  indexes {
+    (match_id, innings_number) [unique]
+    (match_id, status)
+  }
+}
+
+// Real-time engine — single row per live match
+// প্রতি ball এর পরে update হয়
+// Redis cache: "match:live:{match_id}" — TTL = match duration
+// DB এ persist, Redis হবে read layer
+Table match_live_state {
+  match_id              int     [pk, ref: > matches.id, note: "one row per live match"]
+  current_innings_id    int     [not null, ref: > match_innings.id]
+  striker_id            int     [not null, ref: > users.id, note: "current batting striker"]
+  non_striker_id        int     [not null, ref: > users.id]
+  current_bowler_id     int     [not null, ref: > users.id]
+  current_over          int     [not null, default: 1, note: "1-based — first over = 1"]
+  current_ball          int     [not null, default: 0, note: "legal balls in current over 0-5"]
+  total_deliveries      int     [not null, default: 0, note: "all deliveries incl. wide/no-ball"]
+  current_runs          int     [not null, default: 0, note: "quick access — innings re-query avoid"]
+  current_wickets       int     [not null, default: 0]
+  current_balls_bowled  int     [not null, default: 0]
+  last_ball_id          bigint  [ref: > ball_by_ball.id, note: "nullable — last processed ball"]
+  updated_at            timestamptz [default: `now()`]
+}
+// match শেষে এই row delete করা যাবে (data ball_by_ball এ permanent আছে)
+
+
+// ============================================================
+// LAYER 7 — SCORING
+// ============================================================
+
+// Immutable — কখনো delete হয় না — single source of truth
+Table ball_by_ball {
+  id                      bigint       [pk, increment]
+  innings_id              int          [not null, ref: > match_innings.id]
+  match_id                int          [not null, ref: > matches.id, note: "denormalized — join কমাতে"]
+  over_number             int          [not null, note: "1-based — first over = 1"]
+  ball_number             int          [not null, note: "1-6 legal ball count in over"]
+  total_delivery_number   int          [not null, note: "all deliveries incl. wide/no-ball"]
+  bowler_id               int          [not null, ref: > users.id]
+  batsman_id              int          [not null, ref: > users.id, note: "striker"]
+  non_striker_id          int          [not null, ref: > users.id]
+  runs_off_bat            int          [not null, default: 0]
+  extras                  int          [not null, default: 0]
+  total_runs              int          [not null, default: 0, note: "runs_off_bat + extras"]
+  is_wide                 boolean      [not null, default: false]
+  is_no_ball              boolean      [not null, default: false]
+  is_bye                  boolean      [not null, default: false]
+  is_leg_bye              boolean      [not null, default: false]
+  is_penalty              boolean      [not null, default: false]
+  is_wicket               boolean      [not null, default: false]
+  wicket_type             varchar(30)  [note: "nullable — bowled, caught, lbw, run_out, stumped, hit_wicket, retired_hurt"]
+  dismissed_batsman_id    int          [ref: > users.id, note: "nullable"]
+  fielder_id              int          [ref: > users.id, note: "nullable — catch/run out"]
+  // Optional analytics — scorer fill করলে
+  shot_type               varchar(30)  [note: "nullable — drive, pull, sweep, cut, glance, defensive, flick, scoop"]
+  shot_direction          int          [note: "nullable — wagon wheel angle 0-360"]
+  fielding_position       varchar(30)  [note: "nullable — slip, gully, mid_on, mid_off etc"]
+  delivery_type           varchar(30)  [note: "nullable — outswinger, bouncer, yorker, googly etc"]
+  is_boundary             boolean      [not null, default: false]
+  is_six                  boolean      [not null, default: false]
+  is_dot_ball             boolean      [not null, default: false]
+  is_reviewed             boolean      [not null, default: false, note: "DRS review"]
+  review_result           varchar(20)  [note: "nullable — upheld, overturned"]
+  created_at              timestamptz  [default: `now()`]
+
+  indexes {
+    (innings_id, over_number, ball_number) [note: "scorecard render, ball sequence"]
+    (match_id, innings_id)                 [note: "match এর সব ball"]
+    (batsman_id, match_id)                 [note: "batsman per match stats"]
+    (bowler_id, match_id)                  [note: "bowler per match stats"]
+    (dismissed_batsman_id)                 [note: "dismissal history"]
+  }
+}
+
+// Undo last ball এর জন্য — Module 8.2
+// Latest row delete করে undo করা হবে
+// ball_by_ball থেকে recompute করতে পারবে
+
+Table batting_scorecards {
+  id               int          [pk, increment]
+  innings_id       int          [not null, ref: > match_innings.id]
+  match_id         int          [not null, ref: > matches.id, note: "denormalized"]
+  user_id          int          [not null, ref: > users.id]
+  team_id          int          [not null, ref: > teams.id]
+  batting_position int          [not null, note: "1-11"]
+  runs             int          [not null, default: 0]
+  balls_faced      int          [not null, default: 0]
+  fours            int          [not null, default: 0]
+  sixes            int          [not null, default: 0]
+  // strike_rate = (runs / balls_faced) * 100 → application calculate
+  dismissal_type   varchar(30)  [note: "nullable"]
+  dismissed_by_id  int          [ref: > users.id, note: "nullable — bowler"]
+  fielded_by_id    int          [ref: > users.id, note: "nullable — fielder"]
+  status           varchar(20)  [not null, default: 'not_out', note: "not_out, out, retired_hurt, dnb"]
+  version          int          [not null, default: 1, note: "optimistic locking — concurrent scorer conflict prevent"]
+  created_at       timestamptz  [default: `now()`]
+  updated_at       timestamptz
+
+  indexes {
+    (innings_id, user_id) [unique]
+    (user_id, match_id)   [note: "career stats query"]
+    (user_id)             [note: "all matches for a player"]
+  }
+}
+
+Table bowling_scorecards {
+  id             int  [pk, increment]
+  innings_id     int  [not null, ref: > match_innings.id]
+  match_id       int  [not null, ref: > matches.id, note: "denormalized"]
+  user_id        int  [not null, ref: > users.id]
+  team_id        int  [not null, ref: > teams.id]
+  balls_bowled   int  [not null, default: 0, note: "int only — no decimal overs"]
+  maidens        int  [not null, default: 0]
+  runs_conceded  int  [not null, default: 0]
+  wickets        int  [not null, default: 0]
+  wides          int  [not null, default: 0]
+  no_balls       int  [not null, default: 0]
+  // economy, average, SR → application calculate
+  version        int  [not null, default: 1, note: "optimistic locking"]
+  created_at     timestamptz  [default: `now()`]
+  updated_at     timestamptz
+
+  indexes {
+    (innings_id, user_id) [unique]
+    (user_id, match_id)
+    (user_id)
+  }
+}
+
+Table fielding_scorecards {
+  id              int  [pk, increment]
+  match_id        int  [not null, ref: > matches.id]
+  user_id         int  [not null, ref: > users.id]
+  team_id         int  [not null, ref: > teams.id]
+  catches         int  [not null, default: 0]
+  run_outs        int  [not null, default: 0]
+  stumpings       int  [not null, default: 0]
+  dropped_catches int  [not null, default: 0]
+  direct_hits     int  [not null, default: 0]
+  created_at      timestamptz  [default: `now()`]
+  updated_at      timestamptz
+
+  indexes {
+    (match_id, user_id) [unique]
+  }
+}
+
+Table match_awards {
+  id          int          [pk, increment]
+  match_id    int          [not null, ref: > matches.id]
+  user_id     int          [not null, ref: > users.id]
+  team_id     int          [not null, ref: > teams.id]
+  award_type  varchar(50)  [not null, note: "man_of_the_match, best_batsman, best_bowler, best_fielder"]
+  reason      text
+  created_at  timestamptz  [default: `now()`]
+
+  indexes {
+    (match_id, award_type) [unique]
+  }
+}
+
+Table tournament_awards {
+  id             int           [pk, increment]
+  tournament_id  int           [not null, ref: > tournaments.id]
+  user_id        int           [not null, ref: > users.id]
+  team_id        int           [ref: > teams.id, note: "nullable — individual award"]
+  award_type     varchar(50)   [not null, note: "most_runs, most_wickets, best_economy, golden_bat, golden_ball, tournament_mvp, best_team"]
+  stat_value     decimal(8,2)
+  created_at     timestamptz   [default: `now()`]
+
+  indexes {
+    (tournament_id, award_type) [unique]
+  }
+}
+
+
+// ============================================================
+// LAYER 8 — NOTIFICATIONS
+// ============================================================
+
+// ─── NEW ────────────────────────────────────────────────────
+// Module 13 — In-app notification system
+Table notifications {
+  id           bigint       [pk, increment]
+  user_id      int          [not null, ref: > users.id]
+  type         varchar(50)  [not null, note: "match_invite, team_invite, match_start, toss_done, innings_start, match_complete, player_added, player_removed, join_request"]
+  title        varchar(200) [not null]
+  body         text         [not null]
+  data         jsonb        [note: "nullable — extra payload: {match_id, team_id, ...}"]
+  entity_type  varchar(30)  [note: "nullable — match, team, tournament"]
+  entity_id    int          [note: "nullable — related entity ID"]
+  is_read      boolean      [not null, default: false]
+  read_at      timestamptz
+  sent_at      timestamptz  [note: "push sent হওয়ার সময়"]
+  created_at   timestamptz  [default: `now()`]
+
+  indexes {
+    (user_id, is_read)     [note: "PARTIAL: WHERE is_read = false — unread count O(1)"]
+    (user_id, created_at)  [note: "notification feed — DESC sort"]
+  }
+}
+
+// ─── NEW ────────────────────────────────────────────────────
+// FCM (Android) / APNs (iOS) device token
+Table push_tokens {
+  id          int          [pk, increment]
+  user_id     int          [not null, ref: > users.id]
+  token       varchar(500) [not null, note: "FCM/APNs device token"]
+  platform    varchar(10)  [not null, note: "ios, android"]
+  is_active   boolean      [not null, default: true]
+  created_at  timestamptz  [default: `now()`]
+  updated_at  timestamptz
+
+  indexes {
+    (user_id, token)  [unique]
+    (user_id)         [note: "partial: WHERE is_active = true"]
+  }
+}
+
+
+// ============================================================
+// LAYER 9 — OBS STREAMING (FUTURE SCOPE)
+// ============================================================
+
+// ─── NEW ────────────────────────────────────────────────────
+// Module 12 — Live score OBS overlay URL per match
+// URL: cricgeo.com/obs/{token}/overlay
+// OBS Browser Source হিসেবে add করলে real-time score দেখাবে
+Table obs_stream_tokens {
+  id               int          [pk, increment]
+  match_id         int          [unique, not null, ref: > matches.id, note: "one token per match"]
+  created_by       int          [not null, ref: > users.id]
+  token            varchar(255) [unique, not null, note: "URL-safe random token"]
+  overlay_theme    varchar(20)  [not null, default: 'dark', note: "dark, light, transparent"]
+  is_active        boolean      [not null, default: true, note: "match শেষে false হবে"]
+  last_accessed_at timestamptz
+  created_at       timestamptz  [default: `now()`]
+
+  indexes {
+    (token)    [unique]
+    (match_id) [unique]
+  }
+}
+
+
+// ============================================================
+// SOFT DELETE POLICY
+// ============================================================
+// Soft delete (deleted_at) আছে:
+//   users, teams, tournaments, matches
+//
+// Soft delete নেই (immutable / flag-based):
+//   ball_by_ball        — scoring record, কখনো delete না
+//   batting_scorecards  — match record, immutable
+//   bowling_scorecards  — match record, immutable
+//   fielding_scorecards — match record, immutable
+//   match_live_state    — match শেষে row delete করা যায়
+//   match_awards        — record only
+//   tournament_awards   — record only
+//   player_career_stats — aggregate, update only
+//   tournament_player_stats — aggregate, update only
+//   countries, cities   — reference data, immutable
+//   otps                — expires_at দিয়ে expire
+//   user_sessions       — is_revoked দিয়ে invalidate
+//   notifications       — is_read flag
+//   push_tokens         — is_active flag
+//
+// সব query তে: WHERE deleted_at IS NULL
+
+
+// ============================================================
+// PERFORMANCE NOTES
+// ============================================================
+//
+// [Partial Indexes — PostgreSQL migration এ add করতে হবে]
+//   CREATE INDEX idx_users_status ON users (status)
+//     WHERE status = 'suspended';
+//
+//   CREATE INDEX idx_matches_live ON matches (status, team_a_id, team_b_id)
+//     WHERE status IN ('live','scheduled') AND deleted_at IS NULL;
+//
+//   CREATE INDEX idx_notifications_unread ON notifications (user_id, created_at)
+//     WHERE is_read = false;
+//
+//   CREATE UNIQUE INDEX idx_profiles_username
+//     ON profiles (lower(username)) WHERE username IS NOT NULL;
+//
+// [Redis Cache Strategy]
+//   match_live_state  → key: "match:live:{match_id}"    TTL: match duration
+//   player stats      → key: "player:stats:{user_id}"   TTL: 5 min, invalidate on match complete
+//   team list         → key: "team:list:{user_id}"      TTL: 2 min
+//   points table      → key: "tour:points:{tour_id}"    TTL: 1 min
+//
+// [Background Jobs]
+//   match complete → player_career_stats update (async)
+//   match complete → tournament_player_stats update (async)
+//   match complete → tournament_teams points/NRR update (async)
+//   match complete → obs_stream_tokens.is_active = false
+//   daily          → otps cleanup (expired + used)
+//   daily          → match_live_state cleanup (completed matches)
+//
+// [Computed Fields — application layer]
+//   batting_average      = total_runs / (total_matches_batted - total_not_outs)
+//   batting_strike_rate  = (total_runs / total_balls_faced) * 100
+//   bowling_economy      = (total_runs_conceded / total_balls_bowled) * 6
+//   bowling_average      = total_runs_conceded / total_wickets
+//   bowling_strike_rate  = total_balls_bowled / total_wickets
+//   current_run_rate     = total_runs / (balls_bowled / 6)
+//   required_run_rate    = (target - total_runs) / ((overs*6 - balls_bowled) / 6)
+//   over_display         = floor(balls/6) || '.' || (balls%6)  →  e.g. 117 → "19.3"
+//   nrr                  = run_rate_scored - run_rate_conceded (all tournament matches)

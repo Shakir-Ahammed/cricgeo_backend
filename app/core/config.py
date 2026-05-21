@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     #   SQLite:     sqlite+aiosqlite:///./test.db
     DATABASE_URL: str
     
+    # Redis Configuration
+    REDIS_URL: str = "redis://localhost:6379/0"
+
     # JWT Configuration
     JWT_SECRET: str
     JWT_ALGORITHM: str = "HS256"

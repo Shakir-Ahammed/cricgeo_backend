@@ -41,6 +41,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
         r'^/auth/refresh-token$',
         r'^/auth/logout$',
         r'^/locations/.*',          # Countries and cities are public
+        r'^/venues/search.*',       # Venue search is public
+        r'^/venues/\d+$',               # Venue GET by id is public (auth optional)
+        r'^/subscriptions/plans$',       # Subscription plans list is public
         r'^/health$',
         r'^/docs.*',
         r'^/openapi.json$',
