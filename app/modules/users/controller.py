@@ -12,6 +12,20 @@ from typing import Dict, Any, Optional
 class UserController:
 
     @staticmethod
+    async def search_players(
+        q: str,
+        limit: int,
+        db: AsyncSession,
+    ) -> Dict[str, Any]:
+        service = UserService(db)
+        results = await service.search_players(q, limit)
+        return {
+            "success": True,
+            "message": "Players found",
+            "data": [r.model_dump() for r in results],
+        }
+
+    @staticmethod
     async def get_users(
         page: int,
         page_size: int,

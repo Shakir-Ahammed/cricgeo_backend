@@ -2,7 +2,7 @@
 User Pydantic schemas
 """
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, ConfigDict
 from typing import Optional
 from datetime import datetime
 
@@ -32,4 +32,14 @@ class UserList(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class PlayerSearchResult(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: Optional[str] = None
+    phone: Optional[str] = None       # masked: last 4 digits only e.g. "****5978"
+    username: Optional[str] = None
+    profile_image: Optional[str] = None
 

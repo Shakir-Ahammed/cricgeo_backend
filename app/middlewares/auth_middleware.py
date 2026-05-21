@@ -44,6 +44,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
         r'^/venues/search.*',       # Venue search is public
         r'^/venues/\d+$',               # Venue GET by id is public (auth optional)
         r'^/subscriptions/plans$',       # Subscription plans list is public
+        r'^/teams/nearby.*',             # Nearby teams is public
+        r'^/teams/invite/preview/[^/]+$',# GET team invite preview is public
+        r'^/teams/\d+$',                 # GET single team is public
+        r'^/teams/\d+/members$',         # GET team members is public
+        r'^/matches/live$',              # GET live matches is public
+        r'^/matches/invite/[^/]+$',      # GET invite preview is public
+        r'^/matches/\d+$',               # GET single match is public (visibility checked in controller)
+        r'^/matches/\d+/live-state$',    # GET live state is public
         r'^/health$',
         r'^/docs.*',
         r'^/openapi.json$',

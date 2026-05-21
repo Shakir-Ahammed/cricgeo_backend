@@ -26,6 +26,8 @@ from app.modules.profiles.routes import router as profiles_router
 from app.modules.locations.routes import router as locations_router
 from app.modules.venues.routes import router as venues_router
 from app.modules.subscriptions.routes import router as subscriptions_router
+from app.modules.teams.routes import router as teams_router
+from app.modules.matches.routes import router as matches_router
 
 
 @asynccontextmanager
@@ -272,6 +274,8 @@ app.include_router(profiles_router)   # /profiles/*
 app.include_router(locations_router)  # /locations/*
 app.include_router(venues_router)          # /venues/*
 app.include_router(subscriptions_router)   # /subscriptions/*
+app.include_router(teams_router)             # /teams/*
+app.include_router(matches_router)           # /matches/*
 
 app.openapi = custom_openapi  # inject BearerAuth into Swagger UI
 

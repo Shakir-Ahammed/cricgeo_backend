@@ -2,11 +2,14 @@
 User service layer: business logic for user management.
 """
 
-from typing import Optional
+from __future__ import annotations
+
+from typing import Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, outerjoin
 from app.modules.users.model import User
-from app.modules.users.schema import UserOut, UserList
+from app.modules.profiles.model import Profile
+from app.modules.users.schema import UserOut, UserList, PlayerSearchResult
 from app.helpers.utils import normalize_email
 from app.core.config import settings
 from fastapi import HTTPException, status
@@ -58,3 +61,78 @@ class UserService:
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User {user_id} not found")
         return UserOut.model_validate(user)
+
+    async def search_players(self, q: str, limit: int = 20) -> List[PlayerSearchResult]:
+        """
+        Search users by name (ILIKE), exact phone, or username (ILIKE).
+        LEFT JOINs profiles so users without a profile row still appear.
+        Phone is masked — only last 4 digits returned.
+        """
+        limit = min(limit, 20)  # cap server-side
+
+        like = f"%{q}%"
+        stmt = (
+            select(
+                User.id,
+                User.name,
+                User.phone,
+                Profile.username,
+                Profile.profile_image,
+            )
+            .select_from(outerjoin(User, Profile, User.id == Profile.user_id))
+            .where(
+                User.deleted_at == None,  # noqa: E711
+                User.status == "active",
+                (
+                    User.name.ilike(like)
+                    | (User.phone == q)
+                    | Profile.username.ilike(like)
+                ),
+            )
+            .limit(limit)
+        )
+
+        rows = (await self.db.execute(stmt)).all()
+
+        results: List[PlayerSearchResult] = []
+        for row in rows:
+            masked_phone: Optional[str] = None
+            if row.phone:
+                masked_phone = "****" + row.phone[-4:]
+            results.append(
+                PlayerSearchResult(
+                    id=row.id,
+                    name=row.name,
+                    phone=masked_phone,
+                    username=row.username,
+                    profile_image=row.profile_image,
+                )
+            )
+        return results
+
+    async def bulk_check_phones(self, phones: List[str]) -> dict:
+        """
+        Given a list of phone numbers (from contacts), return which are
+        registered users and which are not. Used by 'Add From Contacts' flow.
+        Max 200 phones per request.
+        """
+        phones = list(dict.fromkeys(phones))[:200]  # dedupe + cap
+
+        stmt = (
+            select(User.id, User.name, User.phone)
+            .where(
+                User.phone.in_(phones),
+                User.deleted_at.is_(None),
+                User.status == "active",
+            )
+        )
+        rows = (await self.db.execute(stmt)).all()
+
+        registered_phones = {row.phone for row in rows}
+        registered = [
+            {"phone": row.phone, "user_id": row.id, "name": row.name}
+            for row in rows
+        ]
+        unregistered = [p for p in phones if p not in registered_phones]
+
+        return {"registered": registered, "unregistered": unregistered}

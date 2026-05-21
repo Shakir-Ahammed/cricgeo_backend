@@ -6,6 +6,26 @@
 
 ---
 
+## PROGRESS TRACKER
+
+| Phase | Module | Status |
+|-------|--------|--------|
+| P0 | Infrastructure | ✅ Complete |
+| P1 | Venues Module | ✅ Complete |
+| P2 | Subscriptions Module | ✅ Complete |
+| P3 | Teams Module (+ player search prerequisite) | ⬅️ **Next** |
+| P4 | Matches Module | ⬜ Not started |
+| P5 | Scoring Engine | ⬜ Not started |
+| P6 | Background Jobs | ⬜ Not started |
+| P7 | Notifications Module | ⬜ Not started |
+| P8 | OBS Streaming | ⬜ Not started |
+| P9 | Tournaments Module | ⏸️ **Deferred** |
+
+> **Revised Execution Order (May 2026):** Tournaments deferred to P9.
+> Priority path: Teams → Matches → Scoring → Background Jobs → Notifications → OBS → Tournaments.
+
+---
+
 ## HOW TO USE THIS FILE
 
 1. Open your AI assistant
@@ -28,7 +48,7 @@ Overs display: stored as integer balls only — display as f"{b//6}.{b%6}"
 
 ---
 
-## PHASE 0 — INFRASTRUCTURE
+## PHASE 0 — INFRASTRUCTURE ✅
 
 ### [P0-1] Redis Client
 
@@ -157,7 +177,7 @@ Report each issue with file, line reference, and fix.
 
 ---
 
-## PHASE 1 — VENUES MODULE
+## PHASE 1 — VENUES MODULE ✅
 
 ### [P1-1] Venue Model
 
@@ -291,7 +311,7 @@ List any issues found.
 
 ---
 
-## PHASE 2 — SUBSCRIPTIONS MODULE
+## PHASE 2 — SUBSCRIPTIONS MODULE ✅
 
 ### [P2-1] Subscription Models
 
@@ -375,7 +395,57 @@ Check:
 
 ---
 
-## PHASE 3 — TEAMS MODULE
+## PHASE 3 — TEAMS MODULE ⬅️ NEXT
+
+> **Prerequisite:** Player search must exist before team creation UI can add members.
+> P3-0 adds a search endpoint to the existing users module first.
+
+### [P3-0] Player Search Endpoint (prerequisite for team member add)
+
+```
+Update app/modules/users/routes.py and service.py in the CricGeo backend.
+
+Add a player search endpoint so the team creation flow can find users to add.
+
+Service function (add to app/modules/users/service.py):
+
+search_players(db, q: str, limit: int = 20) -> list[User]
+  — Search by: name ILIKE %q%, OR phone = q (exact), OR profiles.username ILIKE %q%
+  — JOIN profiles on users.id = profiles.user_id (LEFT JOIN — username may be null)
+  — WHERE users.deleted_at IS NULL AND users.status = 'active'
+  — LIMIT limit (max 20)
+  — Return list of User ORM objects
+
+Route (add to app/modules/users/routes.py):
+
+  GET /users/search?q=&limit=20    — auth required
+    — q: min 2 characters (raise 400 if shorter)
+    — Returns list of PlayerSearchResult
+
+Schema (add to app/modules/users/schema.py):
+
+  PlayerSearchResult:
+    id: int
+    name: str
+    phone: str | None   (masked: show only last 4 digits e.g. "****5978")
+    username: str | None
+    profile_image: str | None
+    model_config = ConfigDict(from_attributes=True)
+
+Security note:
+  — Phone number must be masked in response (show only last 4 digits)
+  — Do NOT expose full phone or email in this public search
+  — Requires auth (token) to prevent scraping
+```
+
+**Review checklist:**
+- [ ] Phone masked — never return full phone number
+- [ ] Minimum 2 chars on `q` to prevent full table scan
+- [ ] LIMIT enforced server-side (max 20)
+- [ ] LEFT JOIN profiles so users without profile still appear in results
+- [ ] Auth required (not public)
+
+---
 
 ### [P3-1] Team Models
 
@@ -482,9 +552,9 @@ Routes:
   PUT    /teams/{id}                      owner only
   DELETE /teams/{id}                      owner only
   GET    /teams/{id}/members              public
-  POST   /teams/{id}/members/invite       captain or owner
-  DELETE /teams/{id}/members/{user_id}    captain or owner
-  GET    /teams/{id}/qr                   owner or captain
+  POST   /teams/{id}/members/invite        owner only
+  DELETE /teams/{id}/members/{user_id}    owner only
+  GET    /teams/{id}/qr                   owner only
   POST   /teams/join/{token}              auth required
 
 For DELETE /teams/{id}/members/{user_id}:
@@ -514,9 +584,13 @@ Check:
 
 ---
 
-## PHASE 4 — TOURNAMENTS MODULE
+## PHASE 9 — TOURNAMENTS MODULE ⏸️ DEFERRED
 
-### [P4-1] Tournament Models
+> **This phase has been deferred.** Complete Phases 3–8 first.
+> Tournaments depend on Teams + Matches being fully functional.
+> tournament_id on matches is nullable — friendly matches work without this phase.
+
+### [P9-1] Tournament Models
 
 ```
 Create app/modules/tournaments/model.py for the CricGeo backend.
@@ -546,7 +620,7 @@ TournamentAward — tournament_id, user_id, team_id nullable, award_type, stat_v
 
 ---
 
-### [P4-2] Tournament Service
+### [P9-2] Tournament Service
 
 ```
 Create app/modules/tournaments/service.py for the CricGeo backend.
@@ -579,7 +653,7 @@ get_awards(db, tournament_id) -> list[TournamentAward]
 
 ---
 
-### [P4-3] Tournament Routes
+### [P9-3] Tournament Routes
 
 ```
 Create app/modules/tournaments/controller.py and routes.py for CricGeo.
@@ -610,7 +684,7 @@ Register router prefix="/tournaments" in main.py.
 
 ---
 
-### [P4-REVIEW] Tournament Review
+### [P9-REVIEW] Tournament Review
 
 ```
 Review the tournaments module.
@@ -627,9 +701,9 @@ Check:
 
 ---
 
-## PHASE 5 — MATCHES MODULE
+## PHASE 4 — MATCHES MODULE
 
-### [P5-1] Match Models
+### [P4-1] Match Models
 
 ```
 Create app/modules/matches/model.py for the CricGeo backend.
@@ -681,7 +755,7 @@ MatchLiveState — match_id PK FK, current_innings_id FK, striker_id FK users,
 
 ---
 
-### [P5-2] Match Service — Creation & Setup
+### [P4-2] Match Service — Creation & Setup
 
 ```
 Create app/modules/matches/service.py for the CricGeo backend (creation side only).
@@ -719,7 +793,7 @@ get_invitation_preview(db, token: str) -> dict
 
 ---
 
-### [P5-3] Match Service — State Transitions
+### [P4-3] Match Service — State Transitions
 
 ```
 Add match state transition functions to app/modules/matches/service.py.
@@ -745,7 +819,7 @@ get_user_matches(db, user_id: int, page, per_page) -> dict  (created_by=user_id 
 
 ---
 
-### [P5-4] Match Routes
+### [P4-4] Match Routes
 
 ```
 Create app/modules/matches/controller.py and routes.py for CricGeo.
@@ -773,7 +847,7 @@ Register router prefix="/matches" in main.py.
 
 ---
 
-### [P5-REVIEW] Match Module Review
+### [P4-REVIEW] Match Module Review
 
 ```
 Review the complete matches module.
@@ -792,9 +866,9 @@ Check:
 
 ---
 
-## PHASE 6 — SCORING ENGINE
+## PHASE 5 — SCORING ENGINE
 
-### [P6-1] Scoring Models
+### [P5-1] Scoring Models
 
 ```
 Create app/modules/scoring/model.py for the CricGeo backend.
@@ -854,7 +928,7 @@ MatchAward:
 
 ---
 
-### [P6-2] Scoring Engine — Pure Logic
+### [P5-2] Scoring Engine — Pure Logic
 
 ```
 Create app/modules/scoring/engine.py for the CricGeo backend.
@@ -905,7 +979,7 @@ Write unit-testable pure functions. No side effects.
 
 ---
 
-### [P6-3] Scoring Service — Ball Entry
+### [P5-3] Scoring Service — Ball Entry
 
 ```
 Create app/modules/scoring/service.py for the CricGeo backend.
@@ -950,7 +1024,7 @@ All DB writes in a single transaction — commit once at step 13.
 
 ---
 
-### [P6-4] Scoring Service — Undo, Innings Complete, Match Complete
+### [P5-4] Scoring Service — Undo, Innings Complete, Match Complete
 
 ```
 Add to app/modules/scoring/service.py for the CricGeo backend.
@@ -998,7 +1072,7 @@ async def complete_match(db, redis, manager, match_id, awards: list | None = Non
 
 ---
 
-### [P6-5] Scoring Routes + WebSocket Endpoint
+### [P5-5] Scoring Routes + WebSocket Endpoint
 
 ```
 Create app/modules/scoring/controller.py, routes.py for CricGeo.
@@ -1032,7 +1106,7 @@ Use manager from app.core.websocket.
 
 ---
 
-### [P6-REVIEW] Scoring Engine Review
+### [P5-REVIEW] Scoring Engine Review
 
 ```
 Review the complete scoring engine (engine.py, service.py, routes.py, model.py).
@@ -1054,7 +1128,7 @@ Check:
 
 ---
 
-### [P6-TEST] Scoring Engine Unit Tests
+### [P5-TEST] Scoring Engine Unit Tests
 
 ```
 Create tests/test_scoring_engine.py for the CricGeo backend.
@@ -1105,9 +1179,9 @@ test_no_swap_on_wicket:
 
 ---
 
-## PHASE 7 — BACKGROUND JOBS
+## PHASE 6 — BACKGROUND JOBS
 
-### [P7-1] ARQ Worker Tasks
+### [P6-1] ARQ Worker Tasks
 
 ```
 Create workers/tasks.py for the CricGeo backend.
@@ -1167,7 +1241,7 @@ class WorkerSettings:
 
 ---
 
-### [P7-REVIEW] Background Jobs Review
+### [P6-REVIEW] Background Jobs Review
 
 ```
 Review workers/tasks.py.
@@ -1185,9 +1259,9 @@ Check:
 
 ---
 
-## PHASE 8 — NOTIFICATIONS MODULE
+## PHASE 7 — NOTIFICATIONS MODULE
 
-### [P8-1] Notification Models + Service
+### [P7-1] Notification Models + Service
 
 ```
 Create app/modules/notifications/model.py and service.py for CricGeo.
@@ -1232,7 +1306,7 @@ get_unread_count(db, user_id) -> int
 
 ---
 
-### [P8-2] Notification Routes
+### [P7-2] Notification Routes
 
 ```
 Create app/modules/notifications/controller.py and routes.py for CricGeo.
@@ -1263,7 +1337,7 @@ Also create a helper function notify_match_event(db, match_id, event_type) that:
 
 ---
 
-### [P8-REVIEW] Notifications Review
+### [P7-REVIEW] Notifications Review
 
 ```
 Review the notifications module.
@@ -1279,9 +1353,9 @@ Check:
 
 ---
 
-## PHASE 9 — OBS STREAMING (FUTURE)
+## PHASE 8 — OBS STREAMING
 
-### [P9-1] OBS Streaming Module
+### [P8-1] OBS Streaming Module
 
 ```
 Create app/modules/streaming/model.py, service.py, controller.py, routes.py for CricGeo.
@@ -1523,8 +1597,9 @@ For each N+1 found: show the bad pattern and the fixed query using SQLAlchemy se
 Before marking the CricGeo backend as production-ready, verify the following:
 
 FUNCTIONAL:
-[ ] All 9 phases implemented (Infrastructure, Venues, Subscriptions, Teams,
-    Tournaments, Matches, Scoring, Background Jobs, Notifications)
+[ ] All 9 phases implemented (P0 Infrastructure, P1 Venues, P2 Subscriptions,
+    P3 Teams, P4 Matches, P5 Scoring, P6 Background Jobs, P7 Notifications, P8 OBS)
+[ ] P9 Tournaments implemented (if required)
 [ ] WebSocket connects and broadcasts ball events
 [ ] Undo last ball produces identical state to re-computing from scratch
 [ ] Match completion triggers background jobs correctly

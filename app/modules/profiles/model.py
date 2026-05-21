@@ -15,6 +15,7 @@ class Profile(Base):
     country_id = Column(Integer, ForeignKey("countries.id", ondelete="SET NULL"), nullable=True)
     city_id = Column(Integer, ForeignKey("cities.id", ondelete="SET NULL"), nullable=True)
 
+    username = Column(String(50), unique=True, nullable=True, index=True)
     gender = Column(Integer, nullable=True)          # 1=male, 2=female, 3=other
     date_of_birth = Column(Date, nullable=True)
     profile_image = Column(String(500), nullable=True)

@@ -26,6 +26,11 @@ from app.modules.profiles.model import Profile, PlayerRole, BattingInfo, Bowling
 from app.modules.locations.model import Country, City  # noqa: F401
 from app.modules.venues.model import Venue  # noqa: F401
 from app.modules.subscriptions.model import SubscriptionPlan, UserSubscription  # noqa: F401
+from app.modules.teams.model import Team, TeamMember, TeamInvitation, TeamJoinRequest  # noqa: F401
+from app.modules.matches.model import (  # noqa: F401
+    Match, MatchPowerplay, MatchOfficial, MatchInvitation,
+    MatchPlayer, MatchInnings, MatchLiveState,
+)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
