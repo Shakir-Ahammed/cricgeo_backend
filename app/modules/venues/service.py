@@ -141,6 +141,34 @@ async def search_venues(
     }
 
 
+async def list_all_venues(
+    db: AsyncSession,
+    current_user_id: Optional[int],
+    page: int,
+    per_page: int,
+) -> dict:
+    """
+    List all active venues (paginated). Respects privacy:
+    private venues are only included for their creator.
+    """
+    stmt = select(Venue).where(Venue.status == "active")
+    if current_user_id is not None:
+        stmt = stmt.where(
+            or_(Venue.is_public == True, Venue.created_by == current_user_id)  # noqa: E712
+        )
+    else:
+        stmt = stmt.where(Venue.is_public == True)  # noqa: E712
+
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total: int = (await db.execute(count_stmt)).scalar_one()
+
+    offset = (page - 1) * per_page
+    stmt = stmt.order_by(Venue.name).offset(offset).limit(per_page)
+    items = list((await db.execute(stmt)).scalars().all())
+
+    return {"items": items, "total": total, "page": page, "per_page": per_page}
+
+
 async def save_venue_photo(
     db: AsyncSession,
     venue_id: int,

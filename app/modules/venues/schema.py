@@ -26,6 +26,16 @@ class VenueCreate(BaseModel):
             raise ValueError("name must not be blank")
         return v
 
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "name": "Sher-e-Bangla National Cricket Stadium",
+            "address": "Mirpur, Dhaka 1216",
+            "city_id": 1, "country_id": 1,
+            "latitude": 23.8073, "longitude": 90.3536,
+            "is_public": True
+        }
+    })
+
 
 class VenueResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)

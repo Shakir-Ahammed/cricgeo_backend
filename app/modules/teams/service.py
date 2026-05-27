@@ -11,7 +11,7 @@ from sqlalchemy import select, func, case as sql_case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.modules.teams.model import Team, TeamMember, TeamInvitation, TeamJoinRequest
+from app.modules.teams.model import Team, TeamMember, TeamInvitation, TeamJoinRequest, GuestPlayer
 from app.modules.teams.schema import TeamCreate, TeamInviteCreate, TeamUpdate
 
 
@@ -189,17 +189,65 @@ async def soft_delete_team(
     return True
 
 
-async def get_team_members(db: AsyncSession, team_id: int) -> List[TeamMember]:
+async def get_team_members(db: AsyncSession, team_id: int) -> List[dict]:
     """
-    All members of the team in a single query.
-    No N+1 — returns all rows at once.
+    All members of the team in 1 query + 2 enrichment queries (no N+1).
+    Returns a list of dicts with display_name / identifier / is_guest filled in,
+    suitable for direct serialization via TeamMemberResponse.
     """
-    result = await db.execute(
+    from app.modules.users.model import User as UserModel
+
+    rows = (await db.execute(
         select(TeamMember)
         .where(TeamMember.team_id == team_id)
         .order_by(TeamMember.joined_at.asc())
-    )
-    return list(result.scalars().all())
+    )).scalars().all()
+
+    user_ids = [m.user_id for m in rows if m.user_id is not None]
+    guest_ids = [m.guest_player_id for m in rows if m.guest_player_id is not None]
+
+    users_by_id: dict = {}
+    if user_ids:
+        u_rows = (await db.execute(
+            select(UserModel.id, UserModel.name, UserModel.phone, UserModel.email)
+            .where(UserModel.id.in_(user_ids))
+        )).all()
+        users_by_id = {r.id: r for r in u_rows}
+
+    guests_by_id: dict = {}
+    if guest_ids:
+        g_rows = (await db.execute(
+            select(GuestPlayer).where(GuestPlayer.id.in_(guest_ids))
+        )).scalars().all()
+        guests_by_id = {g.id: g for g in g_rows}
+
+    enriched: List[dict] = []
+    for m in rows:
+        display_name: Optional[str] = None
+        identifier: Optional[str] = None
+        is_guest = m.guest_player_id is not None
+        if m.user_id and (u := users_by_id.get(m.user_id)):
+            display_name = u.name
+            identifier = u.phone or u.email
+        elif m.guest_player_id and (g := guests_by_id.get(m.guest_player_id)):
+            display_name = g.name
+            identifier = g.identifier
+
+        enriched.append({
+            "id": m.id,
+            "team_id": m.team_id,
+            "user_id": m.user_id,
+            "guest_player_id": m.guest_player_id,
+            "role": m.role,
+            "jersey_number": m.jersey_number,
+            "status": m.status,
+            "joined_at": m.joined_at,
+            "released_at": m.released_at,
+            "display_name": display_name,
+            "identifier": identifier,
+            "is_guest": is_guest,
+        })
+    return enriched
 
 
 # ---------------------------------------------------------------------------
@@ -715,3 +763,206 @@ async def direct_add_member(
     db.add(member)
     await db.flush()
     return member
+
+
+# ---------------------------------------------------------------------------
+# Guest / local player helpers
+# ---------------------------------------------------------------------------
+
+async def _find_registered_user_id_by_identifier(
+    db: AsyncSession, identifier: str
+) -> Optional[int]:
+    """Look up an active registered user by exact phone OR email match."""
+    from app.modules.users.model import User as UserModel
+    from sqlalchemy import or_
+
+    ident = identifier.strip()
+    if not ident:
+        return None
+    row = await db.execute(
+        select(UserModel.id).where(
+            or_(UserModel.phone == ident, UserModel.email == ident),
+            UserModel.status == "active",
+            UserModel.deleted_at.is_(None),
+        )
+    )
+    return row.scalar_one_or_none()
+
+
+async def add_guest_player(
+    db: AsyncSession,
+    team_id: int,
+    adder_id: int,
+    name: str,
+    identifier: Optional[str],
+    role: str,
+    jersey_number: Optional[int],
+) -> tuple[GuestPlayer, TeamMember]:
+    """
+    Create a guest player and add them to the team roster in one transaction.
+
+    If `identifier` matches an existing registered user, raises 409 — caller
+    should switch to direct_add_member() instead. This guards against
+    accidentally creating a duplicate guest for an app user.
+    """
+    await _require_captain_or_owner(db, team_id, adder_id)
+
+    if identifier:
+        existing_user_id = await _find_registered_user_id_by_identifier(db, identifier)
+        if existing_user_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A registered user with this phone/email exists. Add them as a registered player instead.",
+            )
+
+    guest = GuestPlayer(
+        team_id=team_id,
+        name=name.strip(),
+        identifier=identifier.strip() if identifier else None,
+        created_by=adder_id,
+        status=_ACTIVE,
+    )
+    db.add(guest)
+    await db.flush()  # get guest.id
+
+    member = TeamMember(
+        team_id=team_id,
+        guest_player_id=guest.id,
+        role=role,
+        jersey_number=jersey_number,
+        status=_ACTIVE,
+    )
+    db.add(member)
+    await db.flush()
+    return guest, member
+
+
+async def batch_add_players(
+    db: AsyncSession,
+    team_id: int,
+    adder_id: int,
+    entries: list,
+) -> List[dict]:
+    """
+    Process the "Add Players" form (Screen 2) in one call.
+
+    For each entry:
+      - If `identifier` matches a registered user  -> add as registered TeamMember
+      - Else if `name` is provided                 -> create GuestPlayer + TeamMember
+      - Else                                       -> error (need either match or name)
+
+    Returns a per-row result list. Rows that fail (already a member, missing
+    name, etc.) do NOT abort the batch — we collect a status for each row so
+    the UI can show what was added vs. what was skipped.
+    """
+    await _require_captain_or_owner(db, team_id, adder_id)
+
+    results: List[dict] = []
+
+    for entry in entries:
+        ident = (entry.identifier or "").strip() or None
+        name = (entry.name or "").strip() or None
+        role = entry.role or "player"
+        jersey = entry.jersey_number
+
+        try:
+            target_user_id: Optional[int] = None
+            if ident:
+                target_user_id = await _find_registered_user_id_by_identifier(db, ident)
+
+            if target_user_id is not None:
+                # Registered player path
+                existing = await db.execute(
+                    select(TeamMember.id).where(
+                        TeamMember.team_id == team_id,
+                        TeamMember.user_id == target_user_id,
+                        TeamMember.status == _ACTIVE,
+                    )
+                )
+                if existing.scalar_one_or_none():
+                    results.append({
+                        "identifier": ident, "name": name,
+                        "type": "registered", "status": "skipped",
+                        "user_id": target_user_id,
+                        "message": "Already an active member",
+                    })
+                    continue
+
+                member = TeamMember(
+                    team_id=team_id,
+                    user_id=target_user_id,
+                    role=role,
+                    jersey_number=jersey,
+                    status=_ACTIVE,
+                )
+                db.add(member)
+                await db.flush()
+                results.append({
+                    "identifier": ident, "name": name,
+                    "type": "registered", "status": "added",
+                    "member_id": member.id, "user_id": target_user_id,
+                })
+                continue
+
+            # Guest path — name is required
+            if not name:
+                results.append({
+                    "identifier": ident, "name": None,
+                    "type": "guest", "status": "error",
+                    "message": "Player full name is required when no registered user matches",
+                })
+                continue
+
+            # Optional: skip if this team already has an active guest with same identifier
+            if ident:
+                dup_guest = await db.execute(
+                    select(GuestPlayer.id)
+                    .join(TeamMember, TeamMember.guest_player_id == GuestPlayer.id)
+                    .where(
+                        GuestPlayer.team_id == team_id,
+                        GuestPlayer.identifier == ident,
+                        TeamMember.status == _ACTIVE,
+                    )
+                )
+                if dup_guest.scalar_one_or_none():
+                    results.append({
+                        "identifier": ident, "name": name,
+                        "type": "guest", "status": "skipped",
+                        "message": "Guest player with this phone/email already on the team",
+                    })
+                    continue
+
+            guest = GuestPlayer(
+                team_id=team_id,
+                name=name,
+                identifier=ident,
+                created_by=adder_id,
+                status=_ACTIVE,
+            )
+            db.add(guest)
+            await db.flush()
+
+            member = TeamMember(
+                team_id=team_id,
+                guest_player_id=guest.id,
+                role=role,
+                jersey_number=jersey,
+                status=_ACTIVE,
+            )
+            db.add(member)
+            await db.flush()
+
+            results.append({
+                "identifier": ident, "name": name,
+                "type": "guest", "status": "added",
+                "member_id": member.id, "guest_player_id": guest.id,
+            })
+
+        except HTTPException as exc:
+            results.append({
+                "identifier": ident, "name": name,
+                "type": "guest" if not target_user_id else "registered",
+                "status": "error", "message": exc.detail,
+            })
+
+    return results

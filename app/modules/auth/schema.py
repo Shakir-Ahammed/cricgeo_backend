@@ -2,7 +2,7 @@
 Auth Pydantic schemas
 """
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, ConfigDict
 from pydantic import model_validator
 from typing import Optional
 from datetime import datetime, date
@@ -23,6 +23,10 @@ class AuthResponse(BaseModel):
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str = Field(..., description="Refresh token to exchange for new access token")
+
+    model_config = ConfigDict(json_schema_extra={
+        "example": {"refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."}
+    })
 
 
 class RefreshTokenResponse(BaseModel):
@@ -45,6 +49,13 @@ class RequestOTPRequest(BaseModel):
             raise ValueError("Provide only one identifier: email or phone")
         return self
 
+    model_config = ConfigDict(json_schema_extra={
+        "examples": [
+            {"phone": "01712345678"},
+            {"email": "rakib@example.com"}
+        ]
+    })
+
 
 class RequestOTPResponse(BaseModel):
     message: str
@@ -66,6 +77,10 @@ class VerifyOTPRequest(BaseModel):
             raise ValueError("Provide only one identifier: email or phone")
         return self
 
+    model_config = ConfigDict(json_schema_extra={
+        "example": {"phone": "01712345678", "otp": "123456"}
+    })
+
 
 class VerifyOTPResponse(BaseModel):
     access_token: str
@@ -85,6 +100,17 @@ class CompleteProfileRequest(BaseModel):
     profile_image: Optional[str] = Field(None, max_length=500, description="URL to profile image")
     bio: Optional[str] = Field(None, max_length=1000, description="Short bio")
 
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "name": "Rakib Hasan",
+            "gender": 1,
+            "date_of_birth": "1998-04-15",
+            "country_id": 1,
+            "city_id": 1,
+            "bio": "Right-hand bat | Right-arm off-break"
+        }
+    })
+
 
 class CompleteProfileResponse(BaseModel):
     message: str
@@ -93,3 +119,7 @@ class CompleteProfileResponse(BaseModel):
 
 class GoogleTokenRequest(BaseModel):
     id_token: str = Field(..., description="Google ID token obtained from the mobile Google Sign-In SDK")
+
+    model_config = ConfigDict(json_schema_extra={
+        "example": {"id_token": "eyJhbGciOiJSUzI1NiIsImtpZCI6Ij..."}
+    })

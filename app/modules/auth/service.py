@@ -3,7 +3,7 @@ Auth service layer: OTP authentication, Google OAuth, session management.
 """
 
 from typing import Optional, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode, urlparse
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -131,7 +131,7 @@ class AuthService:
     ) -> Tuple[str, datetime]:
         refresh_token = create_refresh_token({"user_id": user_id})
         token_hash = hash_token(refresh_token)
-        expires_at = datetime.utcnow() + timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
 
         session = UserSession(
             user_id=user_id,
@@ -149,7 +149,7 @@ class AuthService:
         await self.db.execute(
             update(UserSession)
             .where(UserSession.refresh_token_hash == token_hash)
-            .values(is_revoked=True, revoked_at=datetime.utcnow())
+            .values(is_revoked=True, revoked_at=datetime.now(timezone.utc))
         )
         await self.db.commit()
 
@@ -157,7 +157,7 @@ class AuthService:
         await self.db.execute(
             update(UserSession)
             .where(and_(UserSession.user_id == user_id, UserSession.is_revoked == False))
-            .values(is_revoked=True, revoked_at=datetime.utcnow())
+            .values(is_revoked=True, revoked_at=datetime.now(timezone.utc))
         )
         await self.db.commit()
 
@@ -186,7 +186,11 @@ class AuthService:
                 detail="Token reuse detected. All sessions have been terminated for security.",
             )
 
-        if session.expires_at < datetime.utcnow():
+        now = datetime.now(timezone.utc)
+        session_expires_at = session.expires_at
+        if session_expires_at.tzinfo is None:
+            session_expires_at = session_expires_at.replace(tzinfo=timezone.utc)
+        if session_expires_at < now:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
 
         return session, user_id

@@ -12,7 +12,7 @@ Auth required:
 
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
@@ -43,7 +43,58 @@ def _require_user_id(request: Request) -> int:
     return uid
 
 
-@router.get("/search", response_model=Dict[str, Any])
+@router.get(
+    "",
+    response_model=Dict[str, Any],
+    summary="List all venues (paginated)",
+    description="""🌐 Public (auth optional — also returns the caller's private venues when logged in).
+
+Simple paginated listing without filters. For text / city / radius filters use **`GET /venues/search`** instead.
+""",
+    responses={200: {"content": {"application/json": {"example": {
+        "success": True, "message": "Venues retrieved successfully",
+        "data": {"total": 2, "page": 1, "per_page": 20, "items": [
+            {"id": 4, "name": "Sher-e-Bangla National Cricket Stadium",
+             "address": "Mirpur, Dhaka 1216", "city_id": 1, "country_id": 1,
+             "latitude": 23.8073, "longitude": 90.3536,
+             "is_public": True, "photo": None, "status": "active"},
+            {"id": 7, "name": "Zahur Ahmed Chowdhury Stadium",
+             "address": "Agrabad, Chittagong", "city_id": 2, "country_id": 1,
+             "latitude": 22.3343, "longitude": 91.8194,
+             "is_public": True, "photo": None, "status": "active"}
+        ]}
+    }}}}},
+)
+async def list_all_venues(
+    request: Request,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    current_user_id = _optional_user_id(request)
+    return await controller.list_all_venues(
+        db, current_user_id=current_user_id, page=page, per_page=per_page
+    )
+
+
+@router.get(
+    "/search",
+    response_model=Dict[str, Any],
+    summary="Search venues by text, city, or geo radius",
+    description="""🌐 Public (auth optional — also returns the caller's private venues if logged in).
+
+**Query params:** `q`, `city_id`, `lat`+`lon`+`radius_km`, `page`, `per_page`.
+""",
+    responses={200: {"content": {"application/json": {"example": {
+        "success": True, "message": "Venues",
+        "data": {"total": 1, "page": 1, "per_page": 20, "items": [
+            {"id": 4, "name": "Sher-e-Bangla National Cricket Stadium",
+             "address": "Mirpur, Dhaka 1216", "city_id": 1,
+             "latitude": 23.8073, "longitude": 90.3536,
+             "is_public": True, "photo": None}
+        ]}
+    }}}}},
+)
 async def search_venues(
     request: Request,
     params: VenueSearchParams = Depends(),
@@ -53,7 +104,22 @@ async def search_venues(
     return await controller.search_venues(db, params=params, current_user_id=current_user_id)
 
 
-@router.get("/{venue_id}", response_model=Dict[str, Any])
+@router.get(
+    "/{venue_id}",
+    response_model=Dict[str, Any],
+    summary="Get a single venue",
+    description="🌐🔒 Public if `is_public=true`; otherwise must be the creator.",
+    responses={
+        200: {"content": {"application/json": {"example": {
+            "success": True, "message": "Venue",
+            "data": {"id": 4, "name": "Sher-e-Bangla National Cricket Stadium",
+                     "address": "Mirpur, Dhaka 1216", "city_id": 1,
+                     "latitude": 23.8073, "longitude": 90.3536, "is_public": True}
+        }}}},
+        403: {"description": "Private venue — not owner"},
+        404: {"description": "Venue not found"}
+    },
+)
 async def get_venue(
     venue_id: int,
     request: Request,
@@ -63,7 +129,21 @@ async def get_venue(
     return await controller.get_venue(db, venue_id=venue_id, current_user_id=current_user_id)
 
 
-@router.post("", status_code=201, response_model=Dict[str, Any])
+@router.post(
+    "",
+    status_code=201,
+    response_model=Dict[str, Any],
+    summary="Create a new venue",
+    description="🔒 Auth required. Caller becomes the venue's `created_by`.",
+    responses={
+        201: {"content": {"application/json": {"example": {
+            "success": True, "message": "Venue created",
+            "data": {"id": 4, "name": "Sher-e-Bangla National Cricket Stadium",
+                     "is_public": True}
+        }}}},
+        401: {"description": "Auth required"}, 422: {"description": "Validation error"}
+    },
+)
 async def create_venue(
     data: VenueCreate,
     request: Request,
@@ -74,7 +154,23 @@ async def create_venue(
     return await controller.create_venue(db, data=data, current_user_id=current_user_id)
 
 
-@router.post("/{venue_id}/photo", response_model=Dict[str, Any])
+@router.post(
+    "/{venue_id}/photo",
+    response_model=Dict[str, Any],
+    summary="Upload / replace venue photo",
+    description="""🔒 Auth required. **Creator only.**
+
+Accepts **JPEG / PNG / WebP**, max **5 MB**. Stored on Cloudflare R2; `venues.photo` is updated.
+""",
+    responses={
+        200: {"content": {"application/json": {"example": {
+            "success": True, "message": "Photo uploaded",
+            "data": {"venue_id": 4, "photo": "https://cdn.cricgeo.com/venues/4/photo.jpg"}
+        }}}},
+        401: {"description": "Auth required"}, 403: {"description": "Not the creator"},
+        413: {"description": "Image larger than 5 MB"}, 415: {"description": "Unsupported media type"}
+    },
+)
 async def upload_venue_photo(
     venue_id: int,
     request: Request,

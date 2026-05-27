@@ -234,6 +234,128 @@ async def assign_official(
 
 
 # ---------------------------------------------------------------------------
+# list_match_officials
+# ---------------------------------------------------------------------------
+
+async def list_match_officials(
+    db: AsyncSession,
+    match_id: int,
+) -> List[dict]:
+    """
+    Return all officials assigned to a match, enriched with the registered
+    user's name/phone/profile_image when user_id is set.
+    """
+    from app.modules.users.model import User
+    from app.modules.profiles.model import Profile
+    from sqlalchemy.orm import aliased
+
+    await _get_match_or_404(db, match_id)
+
+    u = aliased(User)
+    p = aliased(Profile)
+    stmt = (
+        select(
+            MatchOfficial.id,
+            MatchOfficial.match_id,
+            MatchOfficial.user_id,
+            MatchOfficial.guest_name,
+            MatchOfficial.guest_phone,
+            MatchOfficial.role,
+            MatchOfficial.position,
+            MatchOfficial.status,
+            u.name.label("user_name"),
+            u.phone.label("user_phone"),
+            p.profile_image.label("profile_image"),
+        )
+        .select_from(MatchOfficial)
+        .outerjoin(u, u.id == MatchOfficial.user_id)
+        .outerjoin(p, p.user_id == MatchOfficial.user_id)
+        .where(MatchOfficial.match_id == match_id)
+        .order_by(MatchOfficial.role, MatchOfficial.position.nulls_last(), MatchOfficial.id)
+    )
+    rows = (await db.execute(stmt)).all()
+
+    out: List[dict] = []
+    for r in rows:
+        display_name = r.user_name or r.guest_name
+        phone = r.user_phone or r.guest_phone
+        masked = ("****" + phone[-4:]) if phone else None
+        out.append({
+            "id": r.id,
+            "match_id": r.match_id,
+            "user_id": r.user_id,
+            "guest_name": r.guest_name,
+            "guest_phone": r.guest_phone,
+            "role": r.role,
+            "position": r.position,
+            "status": r.status,
+            "display_name": display_name,
+            "phone": masked,
+            "profile_image": r.profile_image,
+            "is_guest": r.user_id is None,
+        })
+    return out
+
+
+# ---------------------------------------------------------------------------
+# search_officials  (find registered users by name / phone / email)
+# ---------------------------------------------------------------------------
+
+async def search_officials(
+    db: AsyncSession,
+    q: str,
+    limit: int = 20,
+) -> List[dict]:
+    """
+    Search registered users to add as a match official.
+    Matches partial name / phone / email / username.
+    Phone is masked (last-4) in the response; email is returned in full
+    so the captain can verify before adding.
+    """
+    from app.modules.users.model import User
+    from app.modules.profiles.model import Profile
+    from sqlalchemy import outerjoin
+
+    q = (q or "").strip()
+    if not q:
+        return []
+    limit = max(1, min(limit, 20))
+    like = f"%{q}%"
+
+    stmt = (
+        select(
+            User.id, User.name, User.email, User.phone,
+            Profile.username, Profile.profile_image,
+        )
+        .select_from(outerjoin(User, Profile, User.id == Profile.user_id))
+        .where(
+            User.deleted_at.is_(None),
+            User.status == "active",
+            (
+                User.name.ilike(like)
+                | User.phone.ilike(like)
+                | User.email.ilike(like)
+                | Profile.username.ilike(like)
+            ),
+        )
+        .limit(limit)
+    )
+    rows = (await db.execute(stmt)).all()
+
+    results: List[dict] = []
+    for row in rows:
+        results.append({
+            "id": row.id,
+            "name": row.name,
+            "email": row.email,
+            "phone": ("****" + row.phone[-4:]) if row.phone else None,
+            "username": row.username,
+            "profile_image": row.profile_image,
+        })
+    return results
+
+
+# ---------------------------------------------------------------------------
 # configure_powerplays
 # ---------------------------------------------------------------------------
 

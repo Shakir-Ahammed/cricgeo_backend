@@ -217,6 +217,31 @@ async def add_official(
     }
 
 
+async def list_officials(
+    db: AsyncSession,
+    match_id: int,
+) -> Dict[str, Any]:
+    items = await service.list_match_officials(db, match_id)
+    return {
+        "success": True,
+        "message": "Match officials retrieved",
+        "data": {"total": len(items), "items": items},
+    }
+
+
+async def search_officials(
+    db: AsyncSession,
+    q: str,
+    limit: int,
+) -> Dict[str, Any]:
+    items = await service.search_officials(db, q=q, limit=limit)
+    return {
+        "success": True,
+        "message": "Officials search results",
+        "data": {"total": len(items), "items": items},
+    }
+
+
 async def set_powerplays(
     db: AsyncSession,
     match_id: int,

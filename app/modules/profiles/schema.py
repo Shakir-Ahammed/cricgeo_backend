@@ -2,7 +2,7 @@
 Profile schemas.
 """
 
-from pydantic import BaseModel, EmailStr, Field, model_validator, field_validator
+from pydantic import BaseModel, EmailStr, Field, model_validator, field_validator, ConfigDict
 from typing import Optional, List
 from datetime import datetime, date
 
@@ -44,6 +44,19 @@ class UpdateProfileRequest(BaseModel):
             return None
         return v
 
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "name": "Rakib Hasan",
+            "gender": 1,
+            "country_id": 1,
+            "city_id": 1,
+            "phone": "+8801712345678",
+            "email": "rakib@example.com",
+            "bio": "Opening batsman from Dhaka",
+            "date_of_birth": "1998-04-15"
+        }
+    })
+
 
 # ---------------------------------------------------------------------------
 # Step 2: Update player skills  (Profile page 2/2)
@@ -65,6 +78,16 @@ class UpdateSkillsRequest(BaseModel):
         if self.role in (2, 4) and (self.bowling_style is None or self.bowling_type is None):
             raise ValueError("bowling_style and bowling_type are required for bowler and allrounder roles")
         return self
+
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "role": 4,
+            "batting_style": 2,
+            "batting_order": 1,
+            "bowling_style": 2,
+            "bowling_type": 4
+        }
+    })
 
 
 # ---------------------------------------------------------------------------

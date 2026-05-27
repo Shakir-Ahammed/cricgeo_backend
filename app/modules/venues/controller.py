@@ -83,3 +83,24 @@ async def upload_venue_photo(
         "message": "Venue photo uploaded successfully",
         "data": {"url": public_url, "venue_id": venue.id},
     }
+
+
+async def list_all_venues(
+    db: AsyncSession,
+    current_user_id: Optional[int],
+    page: int,
+    per_page: int,
+) -> Dict[str, Any]:
+    result = await service.list_all_venues(
+        db, current_user_id=current_user_id, page=page, per_page=per_page
+    )
+    return {
+        "success": True,
+        "message": "Venues retrieved successfully",
+        "data": {
+            "items": [VenueResponse.model_validate(v).model_dump() for v in result["items"]],
+            "total": result["total"],
+            "page": result["page"],
+            "per_page": result["per_page"],
+        },
+    }

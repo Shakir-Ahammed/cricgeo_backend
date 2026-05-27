@@ -28,6 +28,10 @@ from app.modules.teams.schema import (
     TeamResponse,
     TeamUpdate,
     DirectAddMemberBody,
+    AddGuestPlayerBody,
+    GuestPlayerResponse,
+    BatchAddPlayersBody,
+    BatchAddPlayersResultItem,
 )
 
 
@@ -402,4 +406,73 @@ async def get_qr_token(
         "success": True,
         "message": "QR token generated successfully",
         "data": result,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Guest / local players
+# ---------------------------------------------------------------------------
+
+
+async def add_guest_player(
+    db: AsyncSession,
+    team_id: int,
+    data: AddGuestPlayerBody,
+    current_user_id: int,
+) -> Dict[str, Any]:
+    """Add a single guest (non-registered) player to the team roster."""
+    guest, member = await service.add_guest_player(
+        db,
+        team_id=team_id,
+        adder_id=current_user_id,
+        name=data.name,
+        identifier=data.identifier,
+        role=data.role,
+        jersey_number=data.jersey_number,
+    )
+    return {
+        "success": True,
+        "message": "Guest player added to the team",
+        "data": {
+            "guest_player": GuestPlayerResponse.model_validate(guest).model_dump(),
+            "member": TeamMemberResponse.model_validate({
+                "id": member.id, "team_id": member.team_id,
+                "user_id": None, "guest_player_id": guest.id,
+                "role": member.role, "jersey_number": member.jersey_number,
+                "status": member.status, "joined_at": member.joined_at,
+                "released_at": member.released_at,
+                "display_name": guest.name, "identifier": guest.identifier,
+                "is_guest": True,
+            }).model_dump(),
+        },
+    }
+
+
+async def batch_add_players(
+    db: AsyncSession,
+    team_id: int,
+    data: BatchAddPlayersBody,
+    current_user_id: int,
+) -> Dict[str, Any]:
+    """
+    Bulk add from the "Add New Players" screen.
+    Each entry is resolved as registered (if identifier matches a user) or
+    guest (using the typed name). Per-row results are returned so the UI can
+    show what was added / skipped / errored.
+    """
+    results = await service.batch_add_players(
+        db,
+        team_id=team_id,
+        adder_id=current_user_id,
+        entries=data.entries,
+    )
+    added = sum(1 for r in results if r["status"] == "added")
+    return {
+        "success": True,
+        "message": f"{added} of {len(results)} player(s) added",
+        "data": {
+            "added": added,
+            "total": len(results),
+            "results": [BatchAddPlayersResultItem.model_validate(r).model_dump() for r in results],
+        },
     }

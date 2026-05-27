@@ -64,17 +64,21 @@ class UserService:
 
     async def search_players(self, q: str, limit: int = 20) -> List[PlayerSearchResult]:
         """
-        Search users by name (ILIKE), exact phone, or username (ILIKE).
+        Search users by name, phone, email, or username (all partial / case-insensitive).
         LEFT JOINs profiles so users without a profile row still appear.
         Phone is masked — only last 4 digits returned.
         """
-        limit = min(limit, 20)  # cap server-side
+        q = (q or "").strip()
+        if not q:
+            return []
+        limit = max(1, min(limit, 20))  # cap server-side
 
         like = f"%{q}%"
         stmt = (
             select(
                 User.id,
                 User.name,
+                User.email,
                 User.phone,
                 Profile.username,
                 Profile.profile_image,
@@ -85,7 +89,8 @@ class UserService:
                 User.status == "active",
                 (
                     User.name.ilike(like)
-                    | (User.phone == q)
+                    | User.phone.ilike(like)
+                    | User.email.ilike(like)
                     | Profile.username.ilike(like)
                 ),
             )

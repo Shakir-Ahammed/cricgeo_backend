@@ -28,6 +28,15 @@ class MatchCreate(BaseModel):
     visibility: str = Field("public", max_length=20)     # 'public', 'private'
     scheduled_at: Optional[datetime] = None
 
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "team_a_id": 7, "team_b_id": 22, "venue_id": 4,
+            "format": "T20", "overs_per_innings": 20, "overs_per_bowler": 4,
+            "match_type": "friendly", "visibility": "public",
+            "scheduled_at": "2026-06-01T14:00:00Z"
+        }
+    })
+
 
 class MatchUpdate(BaseModel):
     venue_id: Optional[int] = None
@@ -38,6 +47,10 @@ class MatchUpdate(BaseModel):
     match_type: Optional[str] = Field(None, max_length=30)
     visibility: Optional[str] = Field(None, max_length=20)
     scheduled_at: Optional[datetime] = None
+
+    model_config = ConfigDict(json_schema_extra={
+        "example": {"overs_per_innings": 25, "scheduled_at": "2026-06-01T15:00:00Z"}
+    })
 
 
 class MatchPlayerInput(BaseModel):
@@ -50,6 +63,11 @@ class MatchPlayerInput(BaseModel):
     is_wicketkeeper: bool = False
     is_substitute: bool = False
 
+    model_config = ConfigDict(json_schema_extra={
+        "example": {"user_id": 12, "team_id": 7, "batting_order": 1,
+                    "is_playing_xi": True, "is_captain": True, "is_wicketkeeper": False}
+    })
+
 
 class MatchOfficialCreate(BaseModel):
     """Body for POST /matches/{id}/officials."""
@@ -59,6 +77,11 @@ class MatchOfficialCreate(BaseModel):
     role: str = Field(..., max_length=30)   # 'umpire', 'scorer', 'referee', 'live_streamer'
     position: Optional[int] = None          # 1 = on-field, 2 = TV, etc.
 
+    model_config = ConfigDict(json_schema_extra={
+        "example": {"guest_name": "Mr. Rahman", "guest_phone": "01712345678",
+                    "role": "umpire", "position": 1}
+    })
+
 
 class PowerplayInput(BaseModel):
     """Single powerplay configuration entry."""
@@ -67,6 +90,11 @@ class PowerplayInput(BaseModel):
     to_over: int
     fielding_restrictions: Optional[str] = None
 
+    model_config = ConfigDict(json_schema_extra={
+        "example": {"pp_number": 1, "from_over": 1, "to_over": 6,
+                    "fielding_restrictions": "max 2 fielders outside circle"}
+    })
+
 
 class MatchInviteCreate(BaseModel):
     """Body for POST /matches/{id}/invite."""
@@ -74,6 +102,10 @@ class MatchInviteCreate(BaseModel):
     invitee_identifier: Optional[str] = Field(None, max_length=255)  # phone/email
     invite_method: str = Field(..., max_length=20)    # 'link', 'qr', 'phone', 'email'
     role: str = Field("viewer", max_length=20)        # 'viewer', 'player', 'scorer', 'umpire'
+
+    model_config = ConfigDict(json_schema_extra={
+        "example": {"invitee_identifier": "01911223344", "invite_method": "link", "role": "player"}
+    })
 
 
 # ---------------------------------------------------------------------------

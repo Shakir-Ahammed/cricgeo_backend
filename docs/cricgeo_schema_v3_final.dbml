@@ -336,19 +336,46 @@ Table teams {
   }
 }
 
-Table team_members {
-  id             int          [pk, increment]
-  team_id        int          [not null, ref: > teams.id]
-  user_id        int          [not null, ref: > users.id]
-  role           varchar(30)  [not null, note: "captain, vice_captain, player, coach, manager"]
-  jersey_number  int
-  status         varchar(20)  [not null, default: 'active', note: "active, inactive, released"]
-  joined_at      timestamptz  [default: `now()`]
-  released_at    timestamptz
-  created_at     timestamptz  [default: `now()`]
+// ─── Guest / Local Players ─────────────────────────────────
+// অ্যাপ ব্যবহার না করেও local player team এ add করা যাবে।
+// Name + (optional) phone/email দিয়ে create হবে।
+// ভবিষ্যতে guest signup করলে linked_user_id এ user.id বসিয়ে claim করা যাবে।
+Table guest_players {
+  id              int          [pk, increment]
+  team_id         int          [not null, ref: > teams.id, note: "যে team এ add হয়েছে"]
+  name            varchar(150) [not null]
+  identifier      varchar(255) [note: "phone অথবা email — optional, claim flow এ লাগবে"]
+  created_by      int          [not null, ref: > users.id, note: "captain/owner যিনি add করেছেন"]
+  linked_user_id  int          [ref: > users.id, note: "guest signup করলে এই column update — তখন stats merge হবে"]
+  linked_at       timestamptz
+  status          varchar(20)  [not null, default: 'active', note: "active, linked, removed"]
+  created_at      timestamptz  [default: `now()`]
+  updated_at      timestamptz
 
   indexes {
-    (team_id, user_id) [unique]
+    (team_id)
+    (identifier) [note: "future claim lookup — partial: WHERE identifier IS NOT NULL"]
+    (linked_user_id)
+  }
+}
+
+// team_members এখন registered user OR guest_player point করে।
+// CHECK constraint: exactly one of (user_id, guest_player_id) must be set.
+Table team_members {
+  id               int          [pk, increment]
+  team_id          int          [not null, ref: > teams.id]
+  user_id          int          [ref: > users.id, note: "registered user — nullable"]
+  guest_player_id  int          [ref: > guest_players.id, note: "guest/local player — nullable"]
+  role             varchar(30)  [not null, note: "captain, vice_captain, player, coach, manager"]
+  jersey_number    int
+  status           varchar(20)  [not null, default: 'active', note: "active, inactive, released"]
+  joined_at        timestamptz  [default: `now()`]
+  released_at      timestamptz
+  created_at       timestamptz  [default: `now()`]
+
+  indexes {
+    (team_id, user_id)         [unique, note: "partial: WHERE user_id IS NOT NULL"]
+    (team_id, guest_player_id) [unique, note: "partial: WHERE guest_player_id IS NOT NULL"]
     (user_id) [note: "user এর সব team"]
     (team_id, role) [note: "captain lookup fast"]
   }

@@ -19,7 +19,20 @@ router = APIRouter(
     tags=["Authentication"]
 )
 
-@router.get("/google/login", response_model=Dict[str, Any])
+@router.get(
+    "/google/login",
+    response_model=Dict[str, Any],
+    summary="Initiate Google OAuth2 login (web)",
+    responses={
+        200: {
+            "description": "Authorization URL generated",
+            "content": {"application/json": {"example": {
+                "success": True, "message": "Redirect to Google",
+                "data": {"authorization_url": "https://accounts.google.com/o/oauth2/v2/auth?..."}
+            }}},
+        }
+    },
+)
 async def google_login(
     req: Request,
     redirect_to: Optional[str] = Query(None, description="Frontend URL to redirect after successful Google login"),
@@ -32,7 +45,15 @@ async def google_login(
     return await AuthController.google_login(req, redirect_to, db)
 
 
-@router.get("/google/callback")
+@router.get(
+    "/google/callback",
+    summary="Google OAuth2 callback (web)",
+    description="""🌐 Public. Used by the **web** Google login flow.
+
+Google redirects the browser here with `code` + `state`; we exchange the code, create or log in the user, and 302-redirect back to `redirect_to` with tokens in the query string.
+
+Mobile apps should NOT call this — use `POST /auth/google/token` instead.""",
+)
 async def google_callback(
     code: str,
     state: str,
@@ -50,7 +71,32 @@ async def google_callback(
     return response
 
 
-@router.post("/google/token", response_model=Dict[str, Any])
+@router.post(
+    "/google/token",
+    response_model=Dict[str, Any],
+    summary="Google Sign-In (mobile id_token)",
+    description="""🌐 Public. Mobile flow:
+1. App uses Google Sign-In SDK → receives `id_token`.
+2. App POSTs that `id_token` here.
+3. Backend verifies with Google, finds/creates the user, returns JWT tokens.""",
+    responses={
+        200: {
+            "description": "Authenticated",
+            "content": {"application/json": {"example": {
+                "success": True, "message": "Login successful",
+                "data": {
+                    "user": {"id": 12, "name": "Rakib Hasan", "email": "rakib@example.com", "is_profile_completed": True},
+                    "tokens": {
+                        "access_token": "eyJhbGciOi...", "refresh_token": "eyJhbGciOi...",
+                        "token_type": "bearer", "expires_in": 900
+                    },
+                    "is_new_user": False
+                }
+            }}}
+        },
+        401: {"description": "Invalid Google id_token"}
+    },
+)
 async def google_token_login(
     request_body: GoogleTokenRequest,
     req: Request,
@@ -68,7 +114,28 @@ async def google_token_login(
 # OTP AUTHENTICATION ROUTES
 # ============================================================================
 
-@router.post("/request-otp", response_model=Dict[str, Any])
+@router.post(
+    "/request-otp",
+    response_model=Dict[str, Any],
+    summary="Send 6-digit OTP to phone or email",
+    description="""🌐 Public. Step 1 of mobile-first auth.
+
+- Provide **exactly one** of `phone` or `email`.
+- OTP is 6 digits, valid **5 minutes**.
+- Rate-limited: **3 requests / minute** per identifier.
+- If the identifier is new, `otp_type="signup"`; else `"login"`.""",
+    responses={
+        200: {
+            "description": "OTP sent",
+            "content": {"application/json": {"example": {
+                "success": True, "message": "OTP sent",
+                "data": {"message": "OTP sent via sms", "channel": "sms", "identifier": "01712345678", "otp_type": "login"}
+            }}}
+        },
+        400: {"description": "Both / neither identifier provided"},
+        429: {"description": "Too many requests"}
+    },
+)
 async def request_otp(
     request_body: RequestOTPRequest,
     db: AsyncSession = Depends(get_db)
@@ -83,7 +150,31 @@ async def request_otp(
     return await AuthController.request_otp(request_body, db)
 
 
-@router.post("/verify-otp", response_model=Dict[str, Any])
+@router.post(
+    "/verify-otp",
+    response_model=Dict[str, Any],
+    summary="Verify OTP and receive JWT tokens",
+    description="""🌐 Public. Step 2 of mobile-first auth.
+
+- Same identifier (`phone` OR `email`) used in `/request-otp` plus the 6-digit `otp`.
+- Max **5** verification attempts per OTP before it's invalidated.
+- New users get a minimal account; `is_new_user=true` and `is_profile_completed=false` — send them through `/auth/complete-profile`.""",
+    responses={
+        200: {
+            "description": "OTP verified, tokens issued",
+            "content": {"application/json": {"example": {
+                "success": True, "message": "Login successful",
+                "data": {
+                    "access_token": "eyJhbGciOi...", "refresh_token": "eyJhbGciOi...",
+                    "token_type": "bearer", "expires_in": 900,
+                    "is_new_user": False, "is_profile_completed": True
+                }
+            }}}
+        },
+        400: {"description": "Invalid / expired OTP"},
+        401: {"description": "Too many wrong attempts"}
+    },
+)
 async def verify_otp(
     request_body: VerifyOTPRequest,
     req: Request,
@@ -98,7 +189,24 @@ async def verify_otp(
     return await AuthController.verify_otp(request_body, req, db)
 
 
-@router.post("/complete-profile", response_model=Dict[str, Any])
+@router.post(
+    "/complete-profile",
+    response_model=Dict[str, Any],
+    summary="Complete profile after OTP signup",
+    description="""🔒 Requires Bearer access token.
+
+Call right after `/verify-otp` if `is_profile_completed=false`. Sets `users.is_profile_completed=true` so subsequent screens are unlocked.""",
+    responses={
+        200: {
+            "description": "Profile completed",
+            "content": {"application/json": {"example": {
+                "success": True, "message": "Profile completed",
+                "data": {"user": {"id": 12, "name": "Rakib Hasan", "is_profile_completed": True}}
+            }}}
+        },
+        401: {"description": "Missing / invalid access token"}
+    },
+)
 async def complete_profile(
     request_body: CompleteProfileRequest,
     db: AsyncSession = Depends(get_db),
@@ -126,7 +234,31 @@ async def complete_profile(
 # REFRESH TOKEN ROUTES
 # ============================================================================
 
-@router.post("/refresh-token", response_model=Dict[str, Any])
+@router.post(
+    "/refresh-token",
+    response_model=Dict[str, Any],
+    summary="Rotate access + refresh tokens",
+    description="""🌐 Public (uses the refresh token itself).
+
+Secure rotation:
+- Validates the refresh token.
+- Issues a **new** access AND a **new** refresh token.
+- Old refresh token is revoked.
+- Reuse of an already-revoked refresh token revokes the **entire** session family (theft detection).""",
+    responses={
+        200: {
+            "description": "New token pair issued",
+            "content": {"application/json": {"example": {
+                "success": True, "message": "Token refreshed",
+                "data": {
+                    "access_token": "eyJhbGciOi...", "refresh_token": "eyJhbGciOi...",
+                    "token_type": "bearer", "expires_in": 900
+                }
+            }}}
+        },
+        401: {"description": "Refresh token invalid / expired / revoked"}
+    },
+)
 async def refresh_token(
     request_body: RefreshTokenRequest,
     req: Request,
@@ -153,7 +285,13 @@ async def refresh_token(
     return await AuthController.refresh_token(request_body, req, db)
 
 
-@router.post("/logout", response_model=Dict[str, Any])
+@router.post(
+    "/logout",
+    response_model=Dict[str, Any],
+    summary="Logout current device",
+    description="🌐 Public. Revokes the supplied refresh token. Other devices stay logged in.",
+    responses={200: {"content": {"application/json": {"example": {"success": True, "message": "Logged out", "data": None}}}}},
+)
 async def logout(
     request_body: RefreshTokenRequest,
     db: AsyncSession = Depends(get_db)
@@ -170,7 +308,16 @@ async def logout(
     return await AuthController.logout(request_body, db)
 
 
-@router.post("/logout-all", response_model=Dict[str, Any])
+@router.post(
+    "/logout-all",
+    response_model=Dict[str, Any],
+    summary="Logout all devices for the current user",
+    description="🔒 Requires Bearer access token. Revokes every active refresh token of the user.",
+    responses={
+        200: {"content": {"application/json": {"example": {"success": True, "message": "All sessions revoked", "data": {"revoked": 3}}}}},
+        401: {"description": "Missing / invalid access token"}
+    },
+)
 async def logout_all(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user)

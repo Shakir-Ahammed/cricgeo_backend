@@ -1,10 +1,10 @@
 """
-Team SQLAlchemy models: Team, TeamMember, TeamInvitation.
+Team SQLAlchemy models: Team, TeamMember, TeamInvitation, GuestPlayer.
 """
 
 from sqlalchemy import (
     Column, Integer, String, Text, DateTime, Boolean,
-    ForeignKey, UniqueConstraint, func,
+    ForeignKey, UniqueConstraint, CheckConstraint, Index, func,
 )
 from app.core.db import Base
 
@@ -31,15 +31,61 @@ class Team(Base):
         return f"<Team(id={self.id}, name={self.name!r})>"
 
 
+class GuestPlayer(Base):
+    """
+    Local / guest player who does not have a CricGeo account.
+    Added by a team captain to fill out a roster. Can be 'claimed' later
+    when the player signs up (set linked_user_id and status='linked').
+    """
+    __tablename__ = "guest_players"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(150), nullable=False)
+    identifier = Column(String(255), nullable=True, index=True)  # phone OR email, optional
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+
+    linked_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    linked_at = Column(DateTime(timezone=True), nullable=True)
+    status = Column(String(20), nullable=False, default="active")  # active, linked, removed
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<GuestPlayer(id={self.id}, team_id={self.team_id}, name={self.name!r})>"
+
+
 class TeamMember(Base):
+    """
+    A team roster row is EITHER a registered user (user_id) OR a guest player
+    (guest_player_id) — never both, never neither. Enforced by CHECK constraint.
+    """
     __tablename__ = "team_members"
     __table_args__ = (
-        UniqueConstraint("team_id", "user_id", name="uq_team_members_team_user"),
+        CheckConstraint(
+            "(user_id IS NOT NULL)::int + (guest_player_id IS NOT NULL)::int = 1",
+            name="ck_team_members_one_player_ref",
+        ),
+        # Partial unique indexes: a user can only appear once per team; same for guest_player.
+        Index(
+            "uq_team_members_team_user",
+            "team_id", "user_id",
+            unique=True,
+            postgresql_where=Column("user_id").isnot(None),
+        ),
+        Index(
+            "uq_team_members_team_guest",
+            "team_id", "guest_player_id",
+            unique=True,
+            postgresql_where=Column("guest_player_id").isnot(None),
+        ),
     )
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    guest_player_id = Column(Integer, ForeignKey("guest_players.id", ondelete="CASCADE"), nullable=True, index=True)
     role = Column(String(30), nullable=False)           # 'captain', 'player', 'coach', etc.
     jersey_number = Column(Integer, nullable=True)
     status = Column(String(20), nullable=False, default="active")  # active, released
@@ -48,7 +94,10 @@ class TeamMember(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     def __repr__(self) -> str:
-        return f"<TeamMember(team_id={self.team_id}, user_id={self.user_id}, role={self.role!r})>"
+        return (
+            f"<TeamMember(team_id={self.team_id}, user_id={self.user_id}, "
+            f"guest_player_id={self.guest_player_id}, role={self.role!r})>"
+        )
 
 
 class TeamInvitation(Base):
